@@ -422,7 +422,7 @@ func TestGcpAdapter_GetObjectInfo(t *testing.T) {
 		Id:         "123",
 		Name:       "name",
 		Region:     "##########",
-		Security:   "########################",
+		Security:   "#######################",
 		TenantId:   "ghgsadfhghshhsad",
 	}
 
