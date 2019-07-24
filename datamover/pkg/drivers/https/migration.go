@@ -123,7 +123,7 @@ func doMove(ctx context.Context, objs []*osdss3.Object, capa chan int64, th chan
 		go move(ctx, objs[i], capa, th, srcLoca, destLoca, remainSource, locMap, job)
 		//Create one routine
 		th <- 1
-		logger.Printf("[INFO] doMigrate: produce 1 routine, len(th):%d.\n", len(th))
+		log.Printf(" doMigrate: produce 1 routine, len(th):%d.\n", len(th))
 	}
 }
 
@@ -138,7 +138,7 @@ func MoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *LocationInfo, 
 	logger.SetOutput(mw)
 	defer logfile.Close()
 
-	logger.Printf("[INFO] Move object[%s] from #%s# to #%s#, size is %d.\n", obj.ObjectKey, srcLoca.BucketName,
+	logger.Printf("[INFO] Move object[%s] from bucket #%s# to bucket #%s#, size is %d.\n", obj.ObjectKey, srcLoca.BucketName,
 		destLoca.BucketName, obj.Size)
 	if obj.Size <= 0 {
 		return nil
@@ -367,7 +367,7 @@ func MultipartMoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *Locat
 		partCount++
 	}
 
-	logger.Printf("[INFO] Move object[%s] from #%s# to #%s#, size is %d.\n", obj.ObjectKey, srcLoca.BucketName,
+	logger.Printf("[INFO] Move object[%s] from  bucket #%s# to bucket #%s#, size is %d.\n", obj.ObjectKey, srcLoca.BucketName,
 		destLoca.BucketName, obj.Size)
 	downloadObjKey := obj.ObjectKey
 	if srcLoca.VirBucket != "" {
@@ -449,7 +449,7 @@ func MultipartMoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *Locat
 			db.DbAdapter.UpdateJob(job)
 			logger.Printf("[INFO] Progress %d%% \n", job.Progress)
 
-			//logger.Printf("Upload range [objectkey: %s, partnumber#%d, offset#%d successfully.\n",obj.ObjectKey, partNumber,offset)
+			log.Printf("Upload range [objectkey: %s, partnumber#%d, offset#%d successfully.\n", obj.ObjectKey, partNumber, offset)
 		}
 		//completeParts = append(completeParts, completePart)
 	}
@@ -465,7 +465,7 @@ func MultipartMoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *Locat
 		}
 	} else {
 		deleteMultipartUpload(obj.ObjectKey, destLoca.VirBucket, destLoca.BakendName, uploadId)
-		logger.Printf("[INFO] CompleteMultipartUpload successfully %s", obj.ObjectKey)
+		log.Printf("CompleteMultipartUpload successfully %s", obj.ObjectKey)
 	}
 
 	return err
@@ -609,7 +609,7 @@ func move(ctx context.Context, obj *osdss3.Object, capa chan int64, th chan int,
 		capa <- -1
 	}
 	t := <-th
-	logger.Printf(" [INFO] migrate: consume %d routine, len(th)=%d\n", t, len(th))
+	log.Printf(" [INFO] migrate: consume %d routine, len(th)=%d\n", t, len(th))
 }
 
 func updateJob(j *flowtype.Job) {
@@ -712,6 +712,7 @@ func runjob(in *pb.RunJobRequest) error {
 		}
 		// migration start
 		//Do migration for each object.
+		logger.Printf("Migration Started. \n")
 		go doMove(ctx, objs, capa, th, srcLoca, destLoca, in.RemainSource, &j)
 		if len(objs) < int(limit) {
 			break
@@ -750,7 +751,7 @@ func runjob(in *pb.RunJobRequest) error {
 			}
 		}
 		if count >= totalObjs || tmout {
-			logger.Printf("[INFO] break, capacity=%d, timout=%v, count=%d, passed count=%d\n", capacity, tmout, count, passedCount)
+			log.Printf("[INFO] break, capacity=%d, timout=%v, count=%d, passed count=%d\n", capacity, tmout, count, passedCount)
 			close(capa)
 			close(th)
 			break

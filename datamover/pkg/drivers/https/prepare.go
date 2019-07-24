@@ -152,10 +152,17 @@ func getObjs(ctx context.Context, in *pb.RunJobRequest, defaultSrcLoca *Location
 		return getOsdsS3Objs(ctx, in, offset, limit)
 	case flowtype.STOR_TYPE_AWS_S3:
 		return getAwsS3Objs(ctx, in.SourceConn, in.Filt, defaultSrcLoca)
+	case flowtype.STOR_TYPE_AZURE_BLOB:
+		return getAzureBlobs(ctx, in.SourceConn, in.Filt, defaultSrcLoca)
+	case flowtype.STOR_TYPE_HW_OBS, flowtype.STOR_TYPE_HW_FUSIONCLOUD, flowtype.STOR_TYPE_HW_FUSIONSTORAGE:
+		return getHwObjs(ctx, in.SourceConn, in.Filt, defaultSrcLoca)
+	case flowtype.STOR_TYPE_GCP_S3:
+		return getGcpS3Objs(ctx, in.SourceConn, in.Filt, defaultSrcLoca)
 	case flowtype.STOR_TYPE_IBM_COS:
 		return getIBMCosObjs(ctx, in.SourceConn, in.Filt, defaultSrcLoca)
 	case flowtype.STOR_TYPE_CEPH_S3:
 		return getCephS3Objs(ctx, in.SourceConn, in.Filt, defaultSrcLoca)
+
 	default:
 		logger.Printf("unsupport storage type:%v\n", in.SourceConn.Type)
 	}
