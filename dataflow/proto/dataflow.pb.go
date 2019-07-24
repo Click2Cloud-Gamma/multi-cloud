@@ -1464,7 +1464,7 @@ type Job struct {
 	EndTime              int64    `protobuf:"varint,11,opt,name=endTime,proto3" json:"endTime,omitempty"`
 	RemainSource         bool     `protobuf:"varint,12,opt,name=remainSource,proto3" json:"remainSource,omitempty"`
 	TotalCapacity        int64    `protobuf:"varint,13,opt,name=totalCapacity,proto3" json:"totalCapacity,omitempty"`
-	PassedCapacity       int64    `protobuf:"varint,14,opt,name=passedCapacity,proto3" json:"passedCapacity,omitempty"`
+	PassedCapacity       float64  `protobuf:"varint,14,opt,name=passedCapacity,proto3" json:"passedCapacity,omitempty"`
 	TotalCount           int64    `protobuf:"varint,15,opt,name=totalCount,proto3" json:"totalCount,omitempty"`
 	PassedCount          int64    `protobuf:"varint,16,opt,name=passedCount,proto3" json:"passedCount,omitempty"`
 	Progress             int64    `protobuf:"varint,17,opt,name=progress,proto3" json:"progress,omitempty"`
@@ -1588,7 +1588,7 @@ func (m *Job) GetTotalCapacity() int64 {
 	return 0
 }
 
-func (m *Job) GetPassedCapacity() int64 {
+func (m *Job) GetPassedCapacity() float64 {
 	if m != nil {
 		return m.PassedCapacity
 	}

@@ -16,14 +16,18 @@ package migration
 
 import (
 	"context"
-
 	"encoding/json"
 	"errors"
-	"fmt"
+	"github.com/opensds/multi-cloud/dataflow/pkg/model"
+	"log"
+	"math"
+	"os"
+	"strconv"
+	"time"
+
 	"github.com/globalsign/mgo/bson"
 	"github.com/micro/go-micro/client"
 	"github.com/opensds/multi-cloud/backend/proto"
-	"github.com/opensds/multi-cloud/dataflow/pkg/model"
 	flowtype "github.com/opensds/multi-cloud/dataflow/pkg/model"
 	"github.com/opensds/multi-cloud/datamover/pkg/amazon/s3"
 	"github.com/opensds/multi-cloud/datamover/pkg/azure/blob"
@@ -36,11 +40,6 @@ import (
 	pb "github.com/opensds/multi-cloud/datamover/proto"
 	s3utils "github.com/opensds/multi-cloud/s3/pkg/utils"
 	osdss3 "github.com/opensds/multi-cloud/s3/proto"
-	"io"
-	"log"
-	"os"
-	"strconv"
-	"time"
 )
 
 var simuRoutines = 10
@@ -48,12 +47,10 @@ var PART_SIZE int64 = 16 * 1024 * 1024 //The max object size that can be moved d
 var JOB_RUN_TIME_MAX = 86400           //seconds, equals 1 day
 var s3client osdss3.S3Service
 var bkendclient backend.BackendService
-var logfile *os.File
-var err error
 
-const WT_DOWLOAD = 45
-const WT_UPLOAD = 45
-const WT_DELETE = 10
+const WT_DOWLOAD = float64(45)
+const WT_UPLOAD = float64(45)
+const WT_DELETE = float64(10)
 
 var logger = log.New(os.Stdout, "", log.LstdFlags)
 
@@ -69,6 +66,7 @@ func Init() {
 }
 
 func HandleMsg(msgData []byte) error {
+
 	var job pb.RunJobRequest
 
 	err := json.Unmarshal(msgData, &job)
@@ -76,25 +74,13 @@ func HandleMsg(msgData []byte) error {
 		logger.Printf("unmarshal failed, err:%v\n", err)
 		return err
 	}
-	logfile, err = os.OpenFile(job.Id+".txt", os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
-	if err != nil {
-		log.Println(err)
-	}
-	logger := log.New(logfile, "", log.LstdFlags)
-	var mw = io.MultiWriter(logfile, os.Stdout)
-	logger.SetOutput(mw)
-	defer logfile.Close()
 	//Check the status of job, and run it if needed
-
 	status := db.DbAdapter.GetJobStatus(job.Id)
 	if status != flowtype.JOB_STATUS_PENDING {
 		logger.Printf("job[id#%s] is not in %s status.\n", job.Id, flowtype.JOB_STATUS_PENDING)
 		return nil //No need to consume this message again
 	}
-	//j := flowtype.Job{Id: bson.ObjectIdHex(job.Id)}
-	//jobid:=fmt.Sprintf("%x", string(j.Id))
-	//fmt.Println("In handle msg %v",jobid)
-	//go forlogger(&j)
+
 	logger.Printf("HandleMsg:job=%+v\n", job)
 	go runjob(&job)
 	return nil
@@ -104,17 +90,7 @@ func doMove(ctx context.Context, objs []*osdss3.Object, capa chan int64, th chan
 	destLoca *LocationInfo, remainSource bool, job *model.Job) {
 	//Only three routines allowed to be running at the same time
 	//th := make(chan int, simuRoutines).
-	jobid := fmt.Sprintf("%x", string(job.Id))
-	logfile, err = os.OpenFile(jobid+".txt", os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
-	if err != nil {
-		log.Println(err)
-	}
-	logger := log.New(logfile, "", log.LstdFlags)
-	var mw = io.MultiWriter(logfile, os.Stdout)
-	logger.SetOutput(mw)
-	defer logfile.Close()
 
-	//forlogger(job)
 	locMap := make(map[string]*LocationInfo)
 	for i := 0; i < len(objs); i++ {
 		if objs[i].Tier == s3utils.Tier999 {
@@ -131,16 +107,6 @@ func doMove(ctx context.Context, objs []*osdss3.Object, capa chan int64, th chan
 }
 
 func MoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *LocationInfo, job *model.Job) error {
-	jobid := fmt.Sprintf("%x", string(job.Id))
-	logfile, err = os.OpenFile(jobid+".txt", os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
-	if err != nil {
-		log.Println(err)
-	}
-	logger := log.New(logfile, "", log.LstdFlags)
-	var mw = io.MultiWriter(logfile, os.Stdout)
-	logger.SetOutput(mw)
-	defer logfile.Close()
-
 	logger.Printf("*****Move object[%s] from #%s# to #%s#, size is %d.\n", obj.ObjectKey, srcLoca.BakendName,
 		destLoca.BakendName, obj.Size)
 	if obj.Size <= 0 {
@@ -155,6 +121,7 @@ func MoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *LocationInfo, 
 		downloadObjKey = srcLoca.VirBucket + "/" + downloadObjKey
 	}
 	//download
+	start_time := time.Now()
 	switch srcLoca.StorType {
 	case flowtype.STOR_TYPE_HW_OBS, flowtype.STOR_TYPE_HW_FUSIONSTORAGE, flowtype.STOR_TYPE_HW_FUSIONCLOUD:
 		downloader = &obsmover.ObsMover{}
@@ -186,16 +153,24 @@ func MoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *LocationInfo, 
 		return err
 	}
 	logger.Printf("Download object[%s] succeed, size=%d\n", obj.ObjectKey, size)
-
-	job.Progress = job.Progress + (WT_DOWLOAD * size / job.TotalCapacity)
-	logger.Printf("  C2C Progress download %d", job.Progress)
-	db.DbAdapter.UpdateJob(job)
+	progresstime(job, size, WT_DOWLOAD, start_time)
+	//job.PassedCapacity= job.PassedCapacity+ WT_DOWLOAD*float64(size)/100
+	//job.PassedCapacity=math.Round(job.PassedCapacity*100)/100
+	//job.Progress= int64(job.PassedCapacity*100/float64(job.TotalCapacity))
+	//speed:= float64(size)/float64(time.Now().Sub(start_time).Seconds())
+	//if job.Avg<speed {
+	//	job.Avg=speed
+	//}
+	//time_req:=(float64(job.TotalCapacity)-job.PassedCapacity)*100/(45*job.Avg)
+	////job.Progress= job.Progress+float64(WT_DOWLOAD*float64(size/job.TotalCapacity))
+	//logger.Printf("  C2C Progress download %d  %v Time-required = %d seconds", job.Progress, (job.PassedCapacity), int64(time_req))
+	//db.DbAdapter.UpdateJob(job)
 	//upload
 	uploadObjKey := obj.ObjectKey
 	if srcLoca.VirBucket != "" {
 		uploadObjKey = destLoca.VirBucket + "/" + uploadObjKey
 	}
-
+	start_time = time.Now()
 	switch destLoca.StorType {
 	case flowtype.STOR_TYPE_HW_OBS, flowtype.STOR_TYPE_HW_FUSIONSTORAGE, flowtype.STOR_TYPE_HW_FUSIONCLOUD:
 		uploader = &obsmover.ObsMover{}
@@ -223,17 +198,26 @@ func MoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *LocationInfo, 
 		logger.Printf("upload object[bucket:%s,key:%s] failed, err:%v.\n", destLoca.BucketName, uploadObjKey, err)
 	} else {
 		logger.Printf("upload object[bucket:%s,key:%s] successfully.\n", destLoca.BucketName, uploadObjKey)
+		progresstime(job, size, WT_DOWLOAD, start_time)
 		//js.Uploaded=js.Uploaded+size
-		job.Progress = job.Progress + (WT_UPLOAD * size / job.TotalCapacity)
-		logger.Printf("  C2C Progress upload %d", job.Progress)
-		db.DbAdapter.UpdateJob(job)
+		//job.PassedCapacity= job.PassedCapacity+ WT_UPLOAD*float64(size)/100
+		//job.PassedCapacity=math.Round(job.PassedCapacity*100)/100
+		//job.Progress= int64(job.PassedCapacity*100/float64(job.TotalCapacity))
+		//speed:= float64(size)/float64(time.Now().Sub(start_time).Seconds())
+		//if job.Avg<speed {
+		//	job.Avg=speed
+		//}
+		//time_req:=(float64(job.TotalCapacity)-job.PassedCapacity)*100/(45*job.Avg)
+		////job.Progress= job.Progress+float64(WT_UPLOAD*float64(size/job.TotalCapacity))
+		////time_req:=float64(time.Now().Sub(start_time).Seconds())*(float64(job.TotalCapacity)*0.8-job.PassedCapacity)*2.5/float64(size)
+		//logger.Printf("  C2C Progress upload %d  %v Time-required = %d seconds", job.Progress, (job.PassedCapacity), int64(time_req))
+		//db.DbAdapter.UpdateJob(job)
 	}
 
 	return err
 }
 
 func multiPartDownloadInit(srcLoca *LocationInfo) (mover MoveWorker, err error) {
-
 	switch srcLoca.StorType {
 	case flowtype.STOR_TYPE_AWS_S3:
 		mover := &s3mover.S3Mover{}
@@ -351,16 +335,6 @@ func deleteMultipartUpload(objKey, virtBucket, backendName, uploadId string) {
 }
 
 func MultipartMoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *LocationInfo, job *model.Job) error {
-	jobid := fmt.Sprintf("%x", string(job.Id))
-	fmt.Println("In multipart %v", jobid)
-	logfile, err = os.OpenFile(jobid+".txt", os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
-	if err != nil {
-		log.Println(err)
-	}
-	logger := log.New(logfile, "", log.LstdFlags)
-	var mw = io.MultiWriter(logfile, os.Stdout)
-	logger.SetOutput(mw)
-	defer logfile.Close()
 	partCount := int64(obj.Size / PART_SIZE)
 	if obj.Size%PART_SIZE != 0 {
 		partCount++
@@ -391,7 +365,7 @@ func MultipartMoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *Locat
 			buf = nil
 			buf = make([]byte, currPartSize)
 		}
-
+		start_time := time.Now()
 		//download
 		start := offset
 		end := offset + currPartSize - 1
@@ -402,18 +376,28 @@ func MultipartMoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *Locat
 			}
 		}
 		readSize, err := downloadMover.DownloadRange(downloadObjKey, srcLoca, buf, start, end)
-
+		progresstime(job, currPartSize, WT_DOWLOAD, start_time)
+		//job.PassedCapacity= job.PassedCapacity+ WT_DOWLOAD*float64(currPartSize)/100
+		//job.PassedCapacity=math.Round(job.PassedCapacity*100)/100
+		//job.Progress= int64(job.PassedCapacity*100/float64(job.TotalCapacity))
+		//speed:= float64(currPartSize)/float64(time.Now().Sub(start_time).Seconds())
+		//if job.Avg<speed {
+		//	job.Avg=speed
+		//}
+		//time_req:=(float64(job.TotalCapacity)-job.PassedCapacity)*100/(45*job.Avg)
+		////time_req:=float64(time.Now().Sub(start_time).Seconds())*(float64(job.TotalCapacity)*0.8-job.PassedCapacity)*2.5/float64(currPartSize)
+		//logger.Printf("  C2C Progress download %d  %v Time-required = %d seconds", job.Progress, (job.PassedCapacity), int64(time_req))
+		//db.DbAdapter.UpdateJob(job)
+		//TODO ***** here we are getting passed capacity of part)
 		if err != nil {
-			logger.Printf("Download failed %v ", err)
 			return errors.New("download failed")
-		} else {
-			logger.Printf("Download part %d range[%d:%d] successfully.\n", partNumber, offset, end)
 		}
+		//fmt.Printf("Download part %d range[%d:%d] successfully.\n", partNumber, offset, end)
 		if int64(readSize) != currPartSize {
 			logger.Printf("internal error, currPartSize=%d, readSize=%d\n", currPartSize, readSize)
 			return errors.New(DMERR_InternalError)
 		}
-
+		start_time = time.Now()
 		//upload
 		if partNumber == 1 {
 			//init multipart upload
@@ -425,7 +409,6 @@ func MultipartMoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *Locat
 			}
 		}
 		err1 := uploadMover.UploadPart(uploadObjKey, destLoca, currPartSize, buf, partNumber, offset)
-
 		if err1 != nil {
 			err := abortMultipartUpload(obj.ObjectKey, destLoca, uploadMover)
 			if err != nil {
@@ -433,12 +416,23 @@ func MultipartMoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *Locat
 			} else {
 				deleteMultipartUpload(obj.ObjectKey, destLoca.VirBucket, destLoca.BakendName, uploadId)
 			}
-			logger.Printf("multipart upload failed %v ", err1)
 			return errors.New("multipart upload failed")
-		} else {
-			logger.Printf("Upload range [objectkey: %s, partnumber#%d, offset#%d successfully.\n", obj.ObjectKey, partNumber, offset)
 		}
+		progresstime(job, currPartSize, WT_DOWLOAD, start_time)
 		//completeParts = append(completeParts, completePart)
+		//job.PassedCapacity= job.PassedCapacity + WT_UPLOAD*float64(currPartSize)/100
+		//job.PassedCapacity=math.Round(job.PassedCapacity*100)/100
+		//job.Progress= int64(job.PassedCapacity*100/float64(job.TotalCapacity))
+		//speed= float64(currPartSize)/float64(time.Now().Sub(start_time).Seconds())
+		//if job.Avg<speed {
+		//	job.Avg=speed
+		//}
+		//time_req=(float64(job.TotalCapacity)-job.PassedCapacity)*100/(45*job.Avg)
+		//
+		////job.Progress= job.Progress+float64(WT_UPLOAD*float64(currPartSize/job.TotalCapacity))
+		////time_req=float64(time.Now().Sub(start_time).Seconds())*(float64(job.TotalCapacity)*0.8-job.PassedCapacity)*2.5/float64(currPartSize)
+		//logger.Printf("  C2C Progress Upload %d  %v Time-required = %d seconds", job.Progress, (job.PassedCapacity), int64(time_req))
+		//db.DbAdapter.UpdateJob(job)
 	}
 
 	err = completeMultipartUpload(uploadObjKey, destLoca, uploadMover)
@@ -452,7 +446,6 @@ func MultipartMoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *Locat
 		}
 	} else {
 		deleteMultipartUpload(obj.ObjectKey, destLoca.VirBucket, destLoca.BakendName, uploadId)
-		logger.Printf("CompleteMultipartUpload successfully %s", obj.ObjectKey)
 	}
 
 	return err
@@ -510,16 +503,6 @@ func deleteObj(ctx context.Context, obj *osdss3.Object, loca *LocationInfo) erro
 
 func move(ctx context.Context, obj *osdss3.Object, capa chan int64, th chan int, srcLoca *LocationInfo,
 	destLoca *LocationInfo, remainSource bool, locaMap map[string]*LocationInfo, job *model.Job) {
-	jobid := fmt.Sprintf("%x", string(job.Id))
-	logfile, err = os.OpenFile(jobid+".txt", os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
-	if err != nil {
-		log.Println(err)
-	}
-	logger := log.New(logfile, "", log.LstdFlags)
-	var mw = io.MultiWriter(logfile, os.Stdout)
-	logger.SetOutput(mw)
-	defer logfile.Close()
-
 	logger.Printf("Obj[%s] is stored in the backend is [%s], default backend is [%s], target backend is [%s].\n",
 		obj.ObjectKey, obj.Backend, srcLoca.BakendName, destLoca.BakendName)
 
@@ -572,9 +555,12 @@ func move(ctx context.Context, obj *osdss3.Object, capa chan int64, th chan int,
 	//Delete source data if needed
 	logger.Printf("remainSource for object[%s] is:%v.", obj.ObjectKey, remainSource)
 	if succeed && !remainSource {
-		deleteObj(ctx, obj, newSrcLoca)
+		err = deleteObj(ctx, obj, newSrcLoca)
+		if err != nil {
+			logger.Printf("  delete object[%s] failed", obj.ObjectKey)
+		}
 		//TODO: what if delete failed
-
+		//TODO: what if delete failed
 	}
 
 	if succeed {
@@ -582,10 +568,14 @@ func move(ctx context.Context, obj *osdss3.Object, capa chan int64, th chan int,
 		logger.Printf("  migrate object[%s] succeed.", obj.ObjectKey)
 		capa <- obj.Size
 		logger.Printf("   C2C migrate object[%v] succeed.", obj.Size)
+		progresstime(job, obj.Size, WT_DELETE, job.StartTime)
 		//js.Deleted= js.Deleted+obj.Size
-		job.Progress = job.Progress + (WT_DELETE * obj.Size / job.TotalCapacity)
-		logger.Printf("  C2C Progress Complete %d", job.Progress)
-		db.DbAdapter.UpdateJob(job)
+		//PassedCapacity:= job.PassedCapacity+ float64(obj.Size)*(WT_DELETE/100)
+		//job.PassedCapacity=math.Round(PassedCapacity*100)/100
+		//job.Progress= int64(job.PassedCapacity*100/float64(job.TotalCapacity))
+		////time_req:=float64(time.Now().Sub(start_time).Seconds())*(float64(job.TotalCapacity)*0.8-job.PassedCapacity)*2.5/float64(obj.Size)
+		//logger.Printf("  C2C Progress Complete %d  %v Time-required =  seconds", job.Progress, job.PassedCapacity )
+		//db.DbAdapter.UpdateJob(job)
 
 	} else {
 		logger.Printf("  migrate object[%s] failed.", obj.ObjectKey)
@@ -608,20 +598,6 @@ func updateJob(j *flowtype.Job) {
 }
 
 func runjob(in *pb.RunJobRequest) error {
-
-	logfile, err = os.OpenFile(in.Id+".txt", os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
-	if err != nil {
-		log.Println(err)
-	}
-
-	logger := log.New(logfile, "", log.LstdFlags)
-	var mw = io.MultiWriter(logfile, os.Stdout)
-	logger.SetOutput(mw)
-
-	defer logfile.Close()
-	//hexid := fmt.Sprintf("%x", string(in.Id))
-	//fmt.Println("Run job : %v",hexid)
-
 	logger.Println("Runjob is called in datamover service.")
 	logger.Printf("Request: %+v\n", in)
 
@@ -637,6 +613,7 @@ func runjob(in *pb.RunJobRequest) error {
 	j := flowtype.Job{Id: bson.ObjectIdHex(in.Id)}
 	j.StartTime = time.Now()
 	j.Status = flowtype.JOB_STATUS_RUNNING
+	j.Avg = 0
 	updateJob(&j)
 
 	// get location information
@@ -652,18 +629,17 @@ func runjob(in *pb.RunJobRequest) error {
 	//totalCount, totalSize, err := countObjs(ctx, in)
 	//j.TotalCount = totalCount
 	//j.TotalCapacity = totalSize
-
+	//Start count obj- TODO PRIVATE
 	var offset, limit int32 = 0, 1000
 	objs, err := getObjs(ctx, in, srcLoca, offset, limit)
 	totalObj := len(objs)
-	if totalObj == 0 {
-		logger.Printf(" Bucket is empty.")
-	}
 	for i := 0; i < totalObj; i++ {
 		j.TotalCount++
 		j.TotalCapacity += objs[i].Size
 	}
 	//js:= &jobstatus{}
+	// End TODO
+	// TODO Here we are getting Total size and Count
 
 	if err != nil || j.TotalCount == 0 || j.TotalCapacity == 0 {
 		if err != nil {
@@ -707,6 +683,7 @@ func runjob(in *pb.RunJobRequest) error {
 
 	var capacity, count, passedCount, totalObjs int64 = 0, 0, 0, j.TotalCount
 	tmout := false
+	time.Sleep(2)
 	for {
 		select {
 		case c := <-capa:
@@ -721,7 +698,7 @@ func runjob(in *pb.RunJobRequest) error {
 				if totalObjs < 100 || count == totalObjs || count%deci == 0 {
 					//update database
 					j.PassedCount = (int64(passedCount))
-					j.PassedCapacity = capacity
+					//j.PassedCapacity = capacity
 					if capacity == j.TotalCapacity {
 						j.Progress = int64(capacity * 100 / j.TotalCapacity)
 					}
@@ -764,6 +741,29 @@ func runjob(in *pb.RunJobRequest) error {
 			logger.Printf("update the finish status of job in database failed three times, no need to try more.")
 		}
 	}
-	defer logfile.Close()
+
 	return ret
+}
+
+func progresstime(job *model.Job, size int64, wt float64, start_time time.Time) {
+	if wt >= 40 {
+		job.PassedCapacity = job.PassedCapacity + wt*float64(size)/100
+		job.PassedCapacity = math.Round(job.PassedCapacity*100) / 100
+		job.Progress = int64(job.PassedCapacity * 100 / float64(job.TotalCapacity))
+		speed := float64(size) / float64(time.Now().Sub(start_time).Seconds())
+		if job.Avg < speed {
+			job.Avg = speed
+		}
+		time_req := (float64(job.TotalCapacity) - job.PassedCapacity) * 100 / (45 * job.Avg)
+		//job.Progress= job.Progress+float64(WT_DOWLOAD*float64(size/job.TotalCapacity))
+		logger.Printf("  Progress %d  Time-required = %d seconds", job.Progress, int64(time_req))
+		db.DbAdapter.UpdateJob(job)
+	} else {
+		PassedCapacity := job.PassedCapacity + float64(size)*(wt/100)
+		job.PassedCapacity = math.Round(PassedCapacity*100) / 100
+		job.Progress = int64(job.PassedCapacity * 100 / float64(job.TotalCapacity))
+		//time_req:=float64(time.Now().Sub(start_time).Seconds())*(float64(job.TotalCapacity)*0.8-job.PassedCapacity)*2.5/float64(obj.Size)
+		//logger.Printf("  C2C Progress Complete %d  %v Time-required =  seconds", job.Progress, job.PassedCapacity )
+		db.DbAdapter.UpdateJob(job)
+	}
 }

@@ -23,6 +23,7 @@ import (
 )
 
 func getCtxTimeout() time.Duration {
+
 	// 1 day as default
 	tmout := 86400 * time.Second
 
@@ -42,6 +43,7 @@ func getCtxTimeout() time.Duration {
 }
 
 func getLocationInfo(ctx context.Context, j *flowtype.Job, in *pb.RunJobRequest) (srcLoca *LocationInfo, destLoca *LocationInfo, err error) {
+
 	srcLoca, err = getConnLocation(ctx, in.SourceConn)
 	if err != nil {
 		logger.Printf("err:%v\n", err)
@@ -63,6 +65,7 @@ func getLocationInfo(ctx context.Context, j *flowtype.Job, in *pb.RunJobRequest)
 
 func refreshSrcLocation(ctx context.Context, obj *osdss3.Object, srcLoca *LocationInfo, destLoca *LocationInfo,
 	locMap map[string]*LocationInfo) (newSrcLoca *LocationInfo, err error) {
+
 	if obj.Backend != srcLoca.BakendName && obj.Backend != "" {
 		//If oject does not use the default backend
 		logger.Printf("locaMap:%+v\n", locMap)
@@ -84,6 +87,7 @@ func refreshSrcLocation(ctx context.Context, obj *osdss3.Object, srcLoca *Locati
 }
 
 func getOsdsLocation(ctx context.Context, virtBkname string, backendName string) (*LocationInfo, error) {
+
 	if backendName == "" {
 		logger.Println("get backend location failed, because backend name is null.")
 		return nil, errors.New("failed")
@@ -102,6 +106,7 @@ func getOsdsLocation(ctx context.Context, virtBkname string, backendName string)
 }
 
 func getConnLocation(ctx context.Context, conn *pb.Connector) (*LocationInfo, error) {
+
 	switch conn.Type {
 	case flowtype.STOR_TYPE_OPENSDS:
 		virtBkname := conn.GetBucketName()
@@ -141,9 +146,16 @@ func getConnLocation(ctx context.Context, conn *pb.Connector) (*LocationInfo, er
 }
 
 func getObjs(ctx context.Context, in *pb.RunJobRequest, defaultSrcLoca *LocationInfo, offset, limit int32) ([]*osdss3.Object, error) {
+
 	switch in.SourceConn.Type {
 	case flowtype.STOR_TYPE_OPENSDS:
 		return getOsdsS3Objs(ctx, in, offset, limit)
+	case flowtype.STOR_TYPE_AWS_S3:
+		return getAwsS3Objs(ctx, in.SourceConn, in.Filt, defaultSrcLoca)
+	case flowtype.STOR_TYPE_IBM_COS:
+		return getIBMCosObjs(ctx, in.SourceConn, in.Filt, defaultSrcLoca)
+	case flowtype.STOR_TYPE_CEPH_S3:
+		return getCephS3Objs(ctx, in.SourceConn, in.Filt, defaultSrcLoca)
 	default:
 		logger.Printf("unsupport storage type:%v\n", in.SourceConn.Type)
 	}
@@ -152,6 +164,7 @@ func getObjs(ctx context.Context, in *pb.RunJobRequest, defaultSrcLoca *Location
 }
 
 func countOsdsS3Objs(ctx context.Context, in *pb.RunJobRequest) (count, size int64, err error) {
+
 	logger.Printf("count objects of bucket[%s]\n", in.SourceConn.BucketName)
 	filt := make(map[string]string)
 	if in.GetFilt() != nil && len(in.Filt.Prefix) > 0 {
@@ -172,6 +185,7 @@ func countOsdsS3Objs(ctx context.Context, in *pb.RunJobRequest) (count, size int
 }
 
 func countObjs(ctx context.Context, in *pb.RunJobRequest) (count, size int64, err error) {
+
 	switch in.SourceConn.Type {
 	case flowtype.STOR_TYPE_OPENSDS:
 		return countOsdsS3Objs(ctx, in)
@@ -183,6 +197,7 @@ func countObjs(ctx context.Context, in *pb.RunJobRequest) (count, size int64, er
 }
 
 func getOsdsS3Objs(ctx context.Context, in *pb.RunJobRequest, offset, limit int32) ([]*osdss3.Object, error) {
+
 	logger.Println("get osds objects begin")
 	filt := make(map[string]string)
 	if in.GetFilt() != nil && len(in.Filt.Prefix) > 0 {
@@ -207,6 +222,7 @@ func getOsdsS3Objs(ctx context.Context, in *pb.RunJobRequest, offset, limit int3
 
 func getIBMCosObjs(ctx context.Context, conn *pb.Connector, filt *pb.Filter,
 	defaultSrcLoca *LocationInfo) ([]*osdss3.Object, error) {
+
 	//TODO(acorbellini): reuse getAWSS3Objs function
 	srcObjs := []*osdss3.Object{}
 	objs, err := ibmcosmover.ListObjs(defaultSrcLoca, filt)
