@@ -46,7 +46,6 @@ func main() {
 	ws.Doc("OpenSDS Multi-Cloud API")
 	ws.Consumes(restful.MIME_JSON)
 	ws.Produces(restful.MIME_JSON)
-	ws.Filter(auth.FilterFactory())
 
 	backend.RegisterRouter(ws)
 	dataflow.RegisterRouter(ws)
@@ -54,7 +53,7 @@ func main() {
 	ws.Filter(logging.FilterFactory())
 	ws.Filter(context.FilterFactory())
 	ws.Filter(auth.FilterFactory())
-	
+
 	s3ws := new(restful.WebService)
 	s3ws.Path("/v1/s3")
 	s3ws.Doc("OpenSDS Multi-Cloud API")

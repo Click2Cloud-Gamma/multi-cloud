@@ -190,7 +190,7 @@ message Job {
 	int64  endTime = 11;
 	bool remainSource = 12;
 	int64 totalCapacity = 13;
-	int64 passedCapacity = 14;
+	double passedCapacity = 14;
 	int64 totalCount = 15;
 	int64 passedCount = 16;
 	int64 progress = 17;

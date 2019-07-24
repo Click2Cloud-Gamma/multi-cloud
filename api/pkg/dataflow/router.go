@@ -49,4 +49,6 @@ func RegisterRouter(ws *restful.WebService) {
 		Doc("List jobs details")
 	ws.Route(ws.GET("/{tenantId}/jobs/{id}").To(handler.GetJob)).
 		Doc("Get job details")
+	ws.Route(ws.GET("/{tenantId}/jobs/{id}/logs").To(handler.GetJoblogs)).
+		Doc("Get job logs")
 }

@@ -27,9 +27,9 @@ import (
 	"github.com/opensds/multi-cloud/api/pkg/common"
 	c "github.com/opensds/multi-cloud/api/pkg/filters/context"
 	"github.com/opensds/multi-cloud/api/pkg/policy"
-	backend "github.com/opensds/multi-cloud/backend/proto"
-	dataflow "github.com/opensds/multi-cloud/dataflow/proto"
-	s3 "github.com/opensds/multi-cloud/s3/proto"
+	"github.com/opensds/multi-cloud/backend/proto"
+	"github.com/opensds/multi-cloud/dataflow/proto"
+	"github.com/opensds/multi-cloud/s3/proto"
 )
 
 const (
@@ -474,4 +474,33 @@ func (s *APIService) ListJob(request *restful.Request, response *restful.Respons
 
 	log.Log("List jobs successfully.")
 	response.WriteEntity(res)
+}
+func (s *APIService) GetJoblogs(request *restful.Request, response *restful.Response) {
+	if !policy.Authorize(request, response, "job:get") {
+		return
+	}
+
+	id := request.PathParameter("id")
+	filename := id + ".txt"
+	log.Logf("Received request jobs [id=%s] details.\n", filename)
+	res, err := ioutil.ReadFile(filename)
+
+	if err != nil {
+		response.WriteError(http.StatusInternalServerError, err)
+		return
+	}
+
+	str := string(res)
+	//For debug -- begin
+	log.Logf("Get jobs reponse:%v\n", res)
+	jsons, errs := json.Marshal(str)
+	if errs != nil {
+		log.Logf(errs.Error())
+	} else {
+		log.Logf("res: %s.\n", jsons)
+	}
+	//For debug -- end
+
+	log.Log("Get job details successfully.")
+	response.WriteAsJson(str)
 }
