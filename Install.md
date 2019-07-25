@@ -33,7 +33,7 @@ source /etc/profile
 ### Clone OpenSDS Multi-Cloud branch from Click2Cloud
 
 ```cassandraql
-mkdir -p /root/gopath/src/github.com/opensds/multi-cloud
+mkdir -p /root/gopath/src/github.com/opensds
 git clone -b cloud_brain_features  https://github.com/Click2Cloud/multi-cloud-pv.git
 ```
 * Enter Username: Click2Cloud-Gamma
