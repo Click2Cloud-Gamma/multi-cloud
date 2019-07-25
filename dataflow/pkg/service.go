@@ -198,7 +198,7 @@ func fillRspConnector(out *pb.Connector, in *model.Connector) {
 	case model.STOR_TYPE_OPENSDS:
 		out.BucketName = in.BucketName
 	case model.STOR_TYPE_AWS_S3, model.STOR_TYPE_HW_OBS, model.STOR_TYPE_HW_FUSIONSTORAGE, model.STOR_TYPE_HW_FUSIONCLOUD,
-		model.STOR_TYPE_AZURE_BLOB, model.STOR_TYPE_CEPH_S3, model.STOR_TYPE_GCP_S3:
+		model.STOR_TYPE_AZURE_BLOB, model.STOR_TYPE_CEPH_S3, model.STOR_TYPE_GCP_S3, model.STOR_TYPE_IBM_COS:
 		for i := 0; i < len(in.ConnConfig); i++ {
 			out.ConnConfig = append(out.ConnConfig, &pb.KV{Key: in.ConnConfig[i].Key, Value: in.ConnConfig[i].Value})
 		}
@@ -307,7 +307,7 @@ func fillReqConnector(out *model.Connector, in *pb.Connector) error {
 		out.BucketName = in.BucketName
 		return nil
 	case model.STOR_TYPE_AWS_S3, model.STOR_TYPE_HW_OBS, model.STOR_TYPE_HW_FUSIONSTORAGE, model.STOR_TYPE_HW_FUSIONCLOUD,
-		model.STOR_TYPE_AZURE_BLOB, model.STOR_TYPE_CEPH_S3, model.STOR_TYPE_GCP_S3:
+		model.STOR_TYPE_AZURE_BLOB, model.STOR_TYPE_CEPH_S3, model.STOR_TYPE_GCP_S3, model.STOR_TYPE_IBM_COS:
 		for i := 0; i < len(in.ConnConfig); i++ {
 			out.ConnConfig = append(out.ConnConfig, model.KeyValue{Key: in.ConnConfig[i].Key, Value: in.ConnConfig[i].Value})
 		}
@@ -464,7 +464,7 @@ func (b *dataflowService) GetJob(ctx context.Context, in *pb.GetJobRequest, out 
 		out.Job = &pb.Job{Id: string(jb.Id.Hex()), Type: jb.Type, PlanName: jb.PlanName, PlanId: jb.PlanId,
 			Description: "for test", SourceLocation: jb.SourceLocation, DestLocation: jb.DestLocation,
 			CreateTime: jb.CreateTime.Unix(), EndTime: jb.EndTime.Unix(), Status: jb.Status, TotalCapacity: jb.TotalCapacity,
-			PassedCapacity: jb.PassedCapacity, TotalCount: jb.TotalCount, PassedCount: jb.PassedCount, Progress: jb.Progress}
+			PassedCapacity: jb.PassedCapacity, TotalCount: jb.TotalCount, PassedCount: jb.PassedCount, Progress: (jb.Progress)}
 	}
 
 	//For debug -- begin
@@ -501,7 +501,7 @@ func (b *dataflowService) ListJob(ctx context.Context, in *pb.ListJobRequest, ou
 				SourceLocation: job.SourceLocation, DestLocation: job.DestLocation, StartTime: job.StartTime.Unix(),
 				CreateTime: job.CreateTime.Unix(), EndTime: job.EndTime.Unix(), Status: job.Status,
 				TotalCapacity: job.TotalCapacity, PassedCapacity: job.PassedCapacity, TotalCount: int64(job.TotalCount),
-				PassedCount: (int64(job.PassedCount)), Progress: int64(job.Progress)}
+				PassedCount: (int64(job.PassedCount)), Progress: (job.Progress)}
 			out.Jobs = append(out.Jobs, &j)
 		}
 	}
