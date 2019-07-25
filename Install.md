@@ -57,7 +57,7 @@ docker logs { container ID }
 
 #### Step- 1: Make a migration plan
 * POST method : http://{{ 127.0.0.1 }}:8089/v1/adminTenantId/plans
-######Request body 
+###### Request body 
 ````cassandraql
 {
     "name":"awstoXYZ",
@@ -83,7 +83,7 @@ docker logs { container ID }
 }
 ````
 
-######Response body
+###### Response body
 
 ```cassandraql
 {
