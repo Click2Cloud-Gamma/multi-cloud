@@ -120,7 +120,7 @@ func doMove(ctx context.Context, objs []*osdss3.Object, capa chan int64, th chan
 			logger.Printf("Object(key:%s) is archived, cannot be migrated.\n", objs[i].ObjectKey)
 			continue
 		}
-		logger.Printf(" [INFO] Begin to move obj(key:%s)\n", objs[i].ObjectKey)
+		logger.Printf(" [INFO] Begin to move obj :%s \n", objs[i].ObjectKey)
 		go move(ctx, objs[i], capa, th, srcLoca, destLoca, remainSource, locMap, job)
 		//Create one routine
 		th <- 1
@@ -139,7 +139,7 @@ func MoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *LocationInfo, 
 	logger.SetOutput(mw)
 	defer logfile.Close()
 
-	logger.Printf("[INFO] Move object[%s] from bucket #%s# to bucket #%s#, size is %d.\n", obj.ObjectKey, srcLoca.BucketName,
+	logger.Printf("[INFO] Move object[%s] from bucket '%s' to bucket '%s', size is %d.\n", obj.ObjectKey, srcLoca.BucketName,
 		destLoca.BucketName, obj.Size)
 	if obj.Size <= 0 {
 		return nil
@@ -222,7 +222,7 @@ func MoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *LocationInfo, 
 	if err != nil {
 		logger.Printf("[ERROR] upload object[bucket:%s,key:%s] failed, err:%v.\n", destLoca.BucketName, uploadObjKey, err)
 	} else {
-		logger.Printf("[INFO] upload object[bucket:%s,key:%s] successfully.\n", destLoca.BucketName, uploadObjKey)
+		log.Printf("[INFO] upload object[bucket:%s,key:%s] successfully.\n", destLoca.BucketName, uploadObjKey)
 		//js.Uploaded=js.Uploaded+size
 		job.PassedCapacity = job.PassedCapacity + WT_UPLOAD*float64(size)/100
 		job.PassedCapacity = math.Round(job.PassedCapacity*100) / 100
@@ -368,7 +368,7 @@ func MultipartMoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *Locat
 		partCount++
 	}
 
-	logger.Printf("[INFO] Move object[%s] from  bucket #%s# to bucket #%s#, size is %d.\n", obj.ObjectKey, srcLoca.BucketName,
+	logger.Printf("[INFO] Move object[%s] from  bucket '%s' to bucket '%s', size is %d.\n", obj.ObjectKey, srcLoca.BucketName,
 		destLoca.BucketName, obj.Size)
 	downloadObjKey := obj.ObjectKey
 	if srcLoca.VirBucket != "" {
@@ -594,9 +594,9 @@ func move(ctx context.Context, obj *osdss3.Object, capa chan int64, th chan int,
 
 	if succeed {
 		//If migrate success, update capacity
-		logger.Printf(" [INFO] migrate object[%s] succeed.", obj.ObjectKey)
+		logger.Printf(" [INFO] %s object migrated succefully.", obj.ObjectKey)
 		capa <- obj.Size
-		logger.Printf(" [INFO] migrate object size [%v] succeed.", obj.Size)
+		logger.Printf(" [INFO]  %v size of migrated object ", obj.Size)
 		//js.Deleted= js.Deleted+obj.Size
 		job.PassedCapacity = job.PassedCapacity + WT_DELETE*float64(obj.Size)/100
 		job.PassedCapacity = math.Round(job.PassedCapacity*100) / 100
@@ -741,7 +741,7 @@ func runjob(in *pb.RunJobRequest) error {
 					if capacity == j.TotalCapacity {
 						j.Progress = int64(capacity * 100 / j.TotalCapacity)
 					}
-					logger.Printf("[INFO] capacity:%d,TotalCapacity:%d Progress:%d\n", capacity, j.TotalCapacity, j.Progress)
+					logger.Printf("[INFO] Passed capacity:%d,TotalCapacity:%d Progress:%d\n", capacity, j.TotalCapacity, j.Progress)
 					db.DbAdapter.UpdateJob(&j)
 				}
 			}

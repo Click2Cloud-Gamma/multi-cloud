@@ -475,6 +475,11 @@ func (s *APIService) ListJob(request *restful.Request, response *restful.Respons
 	log.Log("List jobs successfully.")
 	response.WriteEntity(res)
 }
+
+type response2 struct {
+	data string `json:"data"`
+}
+
 func (s *APIService) GetJoblogs(request *restful.Request, response *restful.Response) {
 	if !policy.Authorize(request, response, "job:get") {
 		return
@@ -489,10 +494,6 @@ func (s *APIService) GetJoblogs(request *restful.Request, response *restful.Resp
 	if err != nil {
 		jsons, _ := json.Marshal("open " + filename + ": The system cannot find the file specified.")
 		response.ResponseWriter.Write(jsons)
-		if filename == "" {
-			jsons, _ := json.Marshal("filename is empty.")
-			response.ResponseWriter.Write(jsons)
-		}
 		return
 	}
 	var obj interface{}
@@ -507,6 +508,7 @@ func (s *APIService) GetJoblogs(request *restful.Request, response *restful.Resp
 	}
 	//For debug -- end
 	json.Unmarshal(jsons, &obj)
+
 	log.Log("Get job details successfully.")
 	response.ResponseWriter.Write(jsons)
 }
