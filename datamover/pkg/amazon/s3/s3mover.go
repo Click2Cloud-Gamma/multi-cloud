@@ -17,6 +17,7 @@ package s3mover
 import (
 	"bytes"
 	"errors"
+
 	"strconv"
 
 	"github.com/aws/aws-sdk-go/aws"

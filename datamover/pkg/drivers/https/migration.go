@@ -51,6 +51,7 @@ var s3client osdss3.S3Service
 var bkendclient backend.BackendService
 var logfile *os.File
 var err error
+var filepath = "/opt/"
 
 const WT_DOWLOAD = 45
 const WT_UPLOAD = 45
@@ -87,7 +88,7 @@ func HandleMsg(msgData []byte) error {
 	}
 	j := flowtype.Job{Id: bson.ObjectIdHex(job.Id)}
 	jobid := fmt.Sprintf("%x", string(j.Id))
-	logfile, err = os.OpenFile(jobid+".txt", os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
+	logfile, err = os.OpenFile(filepath+jobid+".txt", os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
 		log.Println(err)
 	}
@@ -103,7 +104,7 @@ func doMove(ctx context.Context, objs []*osdss3.Object, capa chan int64, th chan
 	//Only three routines allowed to be running at the same time
 	//th := make(chan int, simuRoutines).
 	jobid := fmt.Sprintf("%x", string(job.Id))
-	logfile, err = os.OpenFile(jobid+".txt", os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
+	logfile, err = os.OpenFile(filepath+jobid+".txt", os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
 		log.Println(err)
 	}
@@ -129,7 +130,7 @@ func doMove(ctx context.Context, objs []*osdss3.Object, capa chan int64, th chan
 
 func MoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *LocationInfo, job *model.Job) error {
 	jobid := fmt.Sprintf("%x", string(job.Id))
-	logfile, err = os.OpenFile(jobid+".txt", os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
+	logfile, err = os.OpenFile(filepath+jobid+".txt", os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
 		log.Println(err)
 	}
@@ -354,7 +355,7 @@ func deleteMultipartUpload(objKey, virtBucket, backendName, uploadId string) {
 
 func MultipartMoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *LocationInfo, job *model.Job) error {
 	jobid := fmt.Sprintf("%x", string(job.Id))
-	logfile, err = os.OpenFile(jobid+".txt", os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
+	logfile, err = os.OpenFile(filepath+jobid+".txt", os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
 		log.Println(err)
 	}
@@ -582,7 +583,7 @@ func move(ctx context.Context, obj *osdss3.Object, capa chan int64, th chan int,
 		//TODO: what if delete failed
 	}
 	jobid := fmt.Sprintf("%x", string(job.Id))
-	logfile, err = os.OpenFile(jobid+".txt", os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
+	logfile, err = os.OpenFile(filepath+jobid+".txt", os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
 		log.Println(err)
 	}
@@ -659,7 +660,7 @@ func runjob(in *pb.RunJobRequest) error {
 	//Start count obj- TODO PRIVATE
 	var offset, limit int32 = 0, 1000
 	objs, err := getObjs(ctx, in, srcLoca, offset, limit)
-	logfile, err = os.OpenFile(in.Id+".txt", os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
+	logfile, err = os.OpenFile(filepath+in.Id+".txt", os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
 		log.Println(err)
 	}

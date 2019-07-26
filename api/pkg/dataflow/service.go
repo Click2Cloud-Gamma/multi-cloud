@@ -481,15 +481,21 @@ func (s *APIService) GetJoblogs(request *restful.Request, response *restful.Resp
 	}
 
 	id := request.PathParameter("id")
-	filename := id + ".txt"
+	var filepath = "opt/"
+	filename := filepath + id + ".txt"
 	log.Logf("Received request jobs [id=%s] details.\n", filename)
 	res, err := ioutil.ReadFile(filename)
 
 	if err != nil {
-		response.WriteError(http.StatusInternalServerError, err)
+		jsons, _ := json.Marshal("open " + filename + ": The system cannot find the file specified.")
+		response.ResponseWriter.Write(jsons)
+		if filename == "" {
+			jsons, _ := json.Marshal("filename is empty.")
+			response.ResponseWriter.Write(jsons)
+		}
 		return
 	}
-
+	var obj interface{}
 	str := string(res)
 	//For debug -- begin
 	log.Logf("Get jobs reponse:%v\n", res)
@@ -500,7 +506,7 @@ func (s *APIService) GetJoblogs(request *restful.Request, response *restful.Resp
 		log.Logf("res: %s.\n", jsons)
 	}
 	//For debug -- end
-
+	json.Unmarshal(jsons, &obj)
 	log.Log("Get job details successfully.")
-	response.WriteAsJson(str)
+	response.ResponseWriter.Write(jsons)
 }

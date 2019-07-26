@@ -30,6 +30,7 @@ services:
     volumes:
       - /etc/ssl/certs:/etc/ssl/certs
       - /etc/localtime:/etc/localtime
+      - /opt:/opt
     ports:
       - 8089:8089
     environment:
@@ -72,6 +73,7 @@ services:
       - LIFECYCLE_CRON_CONFIG=0 0 0 * * ?
     volumes:
       - /etc/localtime:/etc/localtime
+      - /opt:/opt
     depends_on:
       - zookeeper
       - kafka
@@ -83,6 +85,7 @@ services:
     volumes:
       - /etc/ssl/certs:/etc/ssl/certs
       - /etc/localtime:/etc/localtime
+      - /opt:/opt
     environment:
       - MICRO_REGISTRY=mdns
       - DB_HOST=datastore:27017
