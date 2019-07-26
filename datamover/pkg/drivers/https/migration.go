@@ -660,6 +660,13 @@ func runjob(in *pb.RunJobRequest) error {
 	//Start count obj- TODO PRIVATE
 	var offset, limit int32 = 0, 1000
 	objs, err := getObjs(ctx, in, srcLoca, offset, limit)
+	if err != nil {
+			//update database
+			j.Status = flowtype.JOB_STATUS_FAILED
+			j.EndTime = time.Now()
+			db.DbAdapter.UpdateJob(&j)
+			return err
+		}
 	logfile, err = os.OpenFile(filepath+in.Id+".txt", os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
 		log.Println(err)
@@ -681,11 +688,7 @@ func runjob(in *pb.RunJobRequest) error {
 	// TODO Here we are getting Total size and Count
 
 	if err != nil || j.TotalCount == 0 || j.TotalCapacity == 0 {
-		if err != nil {
-			j.Status = flowtype.JOB_STATUS_FAILED
-		} else {
-			j.Status = flowtype.JOB_STATUS_SUCCEED
-		}
+		j.Status = flowtype.JOB_STATUS_FAILED
 		j.EndTime = time.Now()
 		updateJob(&j)
 		return err
