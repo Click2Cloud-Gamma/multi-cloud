@@ -43,6 +43,8 @@ git clone -b cloud_brain_features  https://github.com/Click2Cloud/multi-cloud-pv
 cp -rf multi-cloud-pv  /root/gopath/src/github.com/opensds/multi-cloud
 cd /root/gopath/src/github.com/opensds/multi-cloud
 make docker
+#If any contaier are running run "docker-compose-down"
+docker-compose up -d
 ```
 
 ##### NOTE: If mongoDB is installed manually on machine then replace “datastore” with “IP address” in “docker-compose.yaml” file and use “authentication-type”=noauth
@@ -82,6 +84,18 @@ docker logs { container ID }
     "remainSource": true
 }
 ````
+##### storType Available
+Azure: "azure-blob"
+
+IBM: "ibm-cos"
+
+AWS: "aws-s3"
+
+GCP: "gcp-s3"
+
+Ceph: "ceph-s3"
+
+Alibaba: "aws-s3"
 
 ###### Response body
 
@@ -160,7 +174,7 @@ docker logs { container ID }
 }
 ```
 
-##### To get Job Status with Progress 
+##### To get Job Status with Progress and Time Required
 
 * GET method: http://{{ 127.0.0.1 }}:8089/v1/adminTenantId/jobs/{{ JOB-ID }}
 
@@ -183,6 +197,7 @@ docker logs { container ID }
         "totalCount": 9,
         "passedCount": 6,
         "progress": 26
+        "timeRequired": 421
     }
 }
 ```

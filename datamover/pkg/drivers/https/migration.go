@@ -28,13 +28,13 @@ import (
 	"github.com/opensds/multi-cloud/backend/proto"
 	"github.com/opensds/multi-cloud/dataflow/pkg/model"
 	flowtype "github.com/opensds/multi-cloud/dataflow/pkg/model"
-	s3mover "github.com/opensds/multi-cloud/datamover/pkg/amazon/s3"
-	blobmover "github.com/opensds/multi-cloud/datamover/pkg/azure/blob"
-	cephs3mover "github.com/opensds/multi-cloud/datamover/pkg/ceph/s3"
+	"github.com/opensds/multi-cloud/datamover/pkg/amazon/s3"
+	"github.com/opensds/multi-cloud/datamover/pkg/azure/blob"
+	"github.com/opensds/multi-cloud/datamover/pkg/ceph/s3"
 	"github.com/opensds/multi-cloud/datamover/pkg/db"
-	Gcps3mover "github.com/opensds/multi-cloud/datamover/pkg/gcp/s3"
-	obsmover "github.com/opensds/multi-cloud/datamover/pkg/hw/obs"
-	ibmcosmover "github.com/opensds/multi-cloud/datamover/pkg/ibm/cos"
+	"github.com/opensds/multi-cloud/datamover/pkg/gcp/s3"
+	"github.com/opensds/multi-cloud/datamover/pkg/hw/obs"
+	"github.com/opensds/multi-cloud/datamover/pkg/ibm/cos"
 	. "github.com/opensds/multi-cloud/datamover/pkg/utils"
 	pb "github.com/opensds/multi-cloud/datamover/proto"
 	s3utils "github.com/opensds/multi-cloud/s3/pkg/utils"
@@ -53,9 +53,9 @@ var logfile *os.File
 var err error
 var filepath = "/opt/"
 
-const WT_DOWLOAD = 45
-const WT_UPLOAD = 45
-const WT_DELETE = 10
+const WT_DOWLOAD = 50
+const WT_UPLOAD = 50
+const WT_DELETE = 0
 
 var logger = log.New(os.Stdout, "", log.LstdFlags)
 
@@ -115,6 +115,7 @@ func doMove(ctx context.Context, objs []*osdss3.Object, capa chan int64, th chan
 
 	locMap := make(map[string]*LocationInfo)
 	for i := 0; i < len(objs); i++ {
+
 		if objs[i].Tier == s3utils.Tier999 {
 			// archived object cannot be moved currently
 			logger.Printf("Object(key:%s) is archived, cannot be migrated.\n", objs[i].ObjectKey)
@@ -153,6 +154,7 @@ func MoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *LocationInfo, 
 		downloadObjKey = srcLoca.VirBucket + "/" + downloadObjKey
 	}
 	//download
+	start_time := time.Now()
 	switch srcLoca.StorType {
 	case flowtype.STOR_TYPE_HW_OBS, flowtype.STOR_TYPE_HW_FUSIONSTORAGE, flowtype.STOR_TYPE_HW_FUSIONCLOUD:
 		downloader = &obsmover.ObsMover{}
@@ -183,13 +185,29 @@ func MoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *LocationInfo, 
 		logger.Printf("[ERROR] download object[%s] failed.", obj.ObjectKey)
 		return err
 	}
+	progressTimeCalculation(job, size, WT_DOWLOAD, start_time)
 	//logger.Printf("Download object[%s] succeed, size=%d\n", obj.ObjectKey, size)
-	job.PassedCapacity = job.PassedCapacity + WT_DOWLOAD*float64(size)/100
-	job.PassedCapacity = math.Round(job.PassedCapacity*100) / 100
-	job.Progress = int64(job.PassedCapacity * 100 / float64(job.TotalCapacity))
-	//job.Progress= job.Progress+(WT_DOWLOAD*size/job.TotalCapacity)
-	logger.Printf("[INFO] Progress %d%% \n", job.Progress)
-	db.DbAdapter.UpdateJob(job)
+	//job.PassedCapacity = job.PassedCapacity + WT_DOWLOAD*float64(size)/100
+	//job.PassedCapacity = math.Round(job.PassedCapacity*100) / 100
+	//job.Progress = int64(job.PassedCapacity * 100 / float64(job.TotalCapacity))
+	////job.Progress= job.Progress+(WT_DOWLOAD*size/job.TotalCapacity)
+	////speed:=gospeed()*1000
+	////time_rem:= (job.TotalCapacity-int64(job.PassedCapacity))*40/(100*int64(speed))
+	//speed:= float64(size)/float64(time.Now().Sub(start_time).Seconds()) // B/nano-seconds
+	////speed:= speed_nano*(10^9)
+	////speed:= float64(job.PassedCapacity)/float64(time.Now().Sub(start_time).Seconds())
+	//if job.Avg<speed {
+	//	job.Avg=speed
+	//} else {
+	//	//	if speed < 0.1*job.Avg{
+	//	//	job.Avg=speed
+	//	//}
+	//}
+	//job.TimeRequired=3*int64((float64(job.TotalCapacity)*(1-(WT_DELETE/100))-job.PassedCapacity)*100/(WT_UPLOAD*job.Avg))
+	//////job.Progress= job.Progress+float64(WT_DOWLOAD*float64(size/job.TotalCapacity))
+	//logger.Printf("[INFO] Progress %d%%  Time remain: %d seconds \n", job.Progress, job.TimeRequired)
+	//
+	//db.DbAdapter.UpdateJob(job)
 	//upload
 	uploadObjKey := obj.ObjectKey
 	if srcLoca.VirBucket != "" {
@@ -224,12 +242,24 @@ func MoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *LocationInfo, 
 	} else {
 		log.Printf("[INFO] upload object[bucket:%s,key:%s] successfully.\n", destLoca.BucketName, uploadObjKey)
 		//js.Uploaded=js.Uploaded+size
-		job.PassedCapacity = job.PassedCapacity + WT_UPLOAD*float64(size)/100
-		job.PassedCapacity = math.Round(job.PassedCapacity*100) / 100
-		job.Progress = int64(job.PassedCapacity * 100 / float64(job.TotalCapacity))
-		//job.Progress= job.Progress+(WT_UPLOAD*size/job.TotalCapacity)
-		logger.Printf("[INFO] Progress %d%% \n", job.Progress)
-		db.DbAdapter.UpdateJob(job)
+		progressTimeCalculation(job, size, WT_DOWLOAD, start_time)
+		//job.PassedCapacity = job.PassedCapacity + WT_UPLOAD*float64(size)/100
+		//job.PassedCapacity = math.Round(job.PassedCapacity*100) / 100
+		//job.Progress = int64(job.PassedCapacity * 100 / float64(job.TotalCapacity))
+		////job.Progress= job.Progress+(WT_UPLOAD*size/job.TotalCapacity)
+		//speed:= float64(size)/float64(time.Now().Sub(start_time).Seconds())
+		////speed:= float64(job.PassedCapacity)/float64(time.Now().Sub(start_time).Seconds())
+		//if job.Avg<speed {
+		//	job.Avg=speed
+		//} else {
+		////	if speed < 0.1*job.Avg{
+		////	job.Avg=speed
+		////}
+		//}
+		//job.TimeRequired=3*int64((float64(job.TotalCapacity)*(1-(WT_DELETE/100))-job.PassedCapacity)*100/(WT_UPLOAD*job.Avg))
+		//////job.Progress= job.Progress+float64(WT_DOWLOAD*float64(size/job.TotalCapacity))
+		//logger.Printf("[INFO] Progress %d%%  Time remain: %d seconds \n", job.Progress, int(job.TimeRequired))
+		//db.DbAdapter.UpdateJob(job)
 	}
 
 	return err
@@ -403,6 +433,7 @@ func MultipartMoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *Locat
 				return err
 			}
 		}
+		start_time := time.Now()
 		readSize, err := downloadMover.DownloadRange(downloadObjKey, srcLoca, buf, start, end)
 
 		//TODO ***** here we are getting passed capacity of part)
@@ -410,11 +441,27 @@ func MultipartMoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *Locat
 			logger.Printf("[ERROR] Download failed %v ", err)
 			return errors.New("download failed")
 		} else {
-			job.PassedCapacity = job.PassedCapacity + WT_DOWLOAD*float64(currPartSize)/100
-			job.PassedCapacity = math.Round(job.PassedCapacity*100) / 100
-			job.Progress = int64(job.PassedCapacity * 100 / float64(job.TotalCapacity))
-			db.DbAdapter.UpdateJob(job)
-			logger.Printf("[INFO] Progress %d%% \n", job.Progress)
+			progressTimeCalculation(job, currPartSize, WT_DOWLOAD, start_time)
+			//job.PassedCapacity = job.PassedCapacity + WT_DOWLOAD*float64(currPartSize)/100
+			//job.PassedCapacity = math.Round(job.PassedCapacity*100) / 100
+			//job.Progress = int64(job.PassedCapacity * 100 / float64(job.TotalCapacity))
+			////db.DbAdapter.UpdateJob(job)
+			//speed:= float64(currPartSize)/float64(time.Now().Sub(start_time).Seconds()) // B/nano-seconds
+			////speed:= float64(job.PassedCapacity)/float64(time.Now().Sub(start_time).Seconds())
+			////speed:= speed_nano*(10^9)
+			//if job.Avg<speed {
+			//	job.Avg=speed
+			//} else {
+			//	//	if speed < 0.1*job.Avg{
+			//	//	job.Avg=speed
+			//	//}
+			//}
+			////1
+			//job.TimeRequired=3*int64((float64(job.TotalCapacity)*(1-(WT_DELETE/100))-job.PassedCapacity)*100/(WT_UPLOAD*job.Avg))
+			//////job.Progress= job.Progress+float64(WT_DOWLOAD*float64(size/job.TotalCapacity))
+			//db.DbAdapter.UpdateJob(job)
+			//logger.Printf("[INFO] Progress %d%%  Time remain: %d seconds \n", job.Progress, job.TimeRequired)
+
 			//logger.Printf("Download part %d range[%d:%d] successfully.\n", partNumber, offset, end)
 		}
 		if int64(readSize) != currPartSize {
@@ -444,11 +491,28 @@ func MultipartMoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *Locat
 			logger.Printf("[ERROR] multipart upload failed %v ", err1)
 			return errors.New("[ERROR] multipart upload failed")
 		} else {
-			job.PassedCapacity = job.PassedCapacity + WT_UPLOAD*float64(currPartSize)/100
-			job.PassedCapacity = math.Round(job.PassedCapacity*100) / 100
-			job.Progress = int64(job.PassedCapacity * 100 / float64(job.TotalCapacity))
-			db.DbAdapter.UpdateJob(job)
-			logger.Printf("[INFO] Progress %d%% \n", job.Progress)
+			progressTimeCalculation(job, currPartSize, WT_DOWLOAD, start_time)
+			//job.PassedCapacity = job.PassedCapacity + WT_UPLOAD*float64(currPartSize)/100
+			//job.PassedCapacity = math.Round(job.PassedCapacity*100) / 100
+			//job.Progress = int64(job.PassedCapacity * 100 / float64(job.TotalCapacity))
+			//speed:= float64(currPartSize)/float64(time.Now().Sub(start_time).Seconds()) // B/nano-seconds
+			////speed:= speed_nano*(10^9)
+			////speed:= float64(job.PassedCapacity)/float64(time.Now().Sub(start_time).Seconds())
+			//if job.Avg<speed {
+			//	job.Avg=speed
+			//} else {
+			//	//	if speed < 0.1*job.Avg{
+			//	//	job.Avg=speed
+			//	//}
+			//}
+			//job.TimeRequired=3*int64((float64(job.TotalCapacity)*(1-(WT_DELETE/100))-job.PassedCapacity)*100/(WT_UPLOAD*job.Avg))
+			//////job.Progress= job.Progress+float64(WT_DOWLOAD*float64(size/job.TotalCapacity))
+			//db.DbAdapter.UpdateJob(job)
+			//logger.Printf("[INFO] Progress %d%%  Time remain: %d seconds \n", job.Progress, int(job.TimeRequired))
+			//db.DbAdapter.UpdateJob(job)
+			//speed:=gospeed()*1000
+			//time_rem:= (job.TotalCapacity-int64(job.PassedCapacity))*40/(100*int64(speed))
+			//logger.Printf("[INFO] Progress %d%%  Time remain: %d seconds \n", job.Progress, time_rem)
 
 			log.Printf("Upload range [objectkey: %s, partnumber#%d, offset#%d successfully.\n", obj.ObjectKey, partNumber, offset)
 		}
@@ -594,15 +658,18 @@ func move(ctx context.Context, obj *osdss3.Object, capa chan int64, th chan int,
 
 	if succeed {
 		//If migrate success, update capacity
-		logger.Printf(" [INFO] %s object migrated succefully.", obj.ObjectKey)
+		logger.Printf(" [INFO] %s object migrated successfully.", obj.ObjectKey)
 		capa <- obj.Size
 		logger.Printf(" [INFO]  %v size of migrated object ", obj.Size)
+		progressTimeCalculation(job, obj.Size, WT_DELETE, time.Now())
 		//js.Deleted= js.Deleted+obj.Size
 		job.PassedCapacity = job.PassedCapacity + WT_DELETE*float64(obj.Size)/100
 		job.PassedCapacity = math.Round(job.PassedCapacity*100) / 100
 		job.Progress = int64(job.PassedCapacity * 100 / float64(job.TotalCapacity))
 		//job.Progress= job.Progress+(WT_DELETE*obj.Size/job.TotalCapacity)
-		logger.Printf("[INFO] Progress %d%% \n", job.Progress)
+		//speed:=gospeed()*1000
+		//time_rem:= (job.TotalCapacity-int64(job.PassedCapacity))*40/(100*int64(speed))
+		logger.Printf("[INFO] Progress %d%%  Time remain:  seconds \n", job.Progress)
 		db.DbAdapter.UpdateJob(job)
 
 	} else {
@@ -649,6 +716,7 @@ func runjob(in *pb.RunJobRequest) error {
 	if err != nil {
 		j.Status = flowtype.JOB_STATUS_FAILED
 		j.EndTime = time.Now()
+
 		updateJob(&j)
 		return err
 	}
@@ -660,6 +728,13 @@ func runjob(in *pb.RunJobRequest) error {
 	//Start count obj- TODO PRIVATE
 	var offset, limit int32 = 0, 1000
 	objs, err := getObjs(ctx, in, srcLoca, offset, limit)
+	if err != nil {
+		//update database
+		j.Status = flowtype.JOB_STATUS_FAILED
+		j.EndTime = time.Now()
+		db.DbAdapter.UpdateJob(&j)
+		return err
+	}
 	logfile, err = os.OpenFile(filepath+in.Id+".txt", os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
 		log.Println(err)
@@ -681,11 +756,7 @@ func runjob(in *pb.RunJobRequest) error {
 	// TODO Here we are getting Total size and Count
 
 	if err != nil || j.TotalCount == 0 || j.TotalCapacity == 0 {
-		if err != nil {
-			j.Status = flowtype.JOB_STATUS_FAILED
-		} else {
-			j.Status = flowtype.JOB_STATUS_SUCCEED
-		}
+		j.Status = flowtype.JOB_STATUS_FAILED
 		j.EndTime = time.Now()
 		updateJob(&j)
 		return err
@@ -752,7 +823,7 @@ func runjob(in *pb.RunJobRequest) error {
 			}
 		}
 		if count >= totalObjs || tmout {
-			log.Printf("[INFO] break, capacity=%d, timout=%v, count=%d, passed count=%d\n", capacity, tmout, count, passedCount)
+			log.Printf("break, capacity=%d, timout=%v, count=%d, passed count=%d\n", capacity, tmout, count, passedCount)
 			close(capa)
 			close(th)
 			break
@@ -782,4 +853,35 @@ func runjob(in *pb.RunJobRequest) error {
 	}
 	defer logfile.Close()
 	return ret
+}
+func progressTimeCalculation(job *model.Job, size int64, wt float64, start_time time.Time) {
+	jobid := fmt.Sprintf("%x", string(job.Id))
+	logfile, err = os.OpenFile(filepath+jobid+".txt", os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
+	if err != nil {
+		log.Println(err)
+	}
+
+	logger := log.New(logfile, "", log.LstdFlags)
+	var mw = io.MultiWriter(logfile, os.Stdout)
+	logger.SetOutput(mw)
+	if wt >= 40 {
+		job.PassedCapacity = job.PassedCapacity + wt*float64(size)/100
+		job.PassedCapacity = math.Round(job.PassedCapacity*100) / 100
+		job.Progress = int64(job.PassedCapacity * 100 / float64(job.TotalCapacity))
+		speed := float64(size) / float64(time.Now().Sub(start_time).Seconds())
+		if job.Avg < speed {
+			job.Avg = speed
+		} //else {	if speed < 0.1*job.Avg{
+		//	job.Avg=speed
+		//}
+		job.TimeRequired = 3 * int64((float64(job.TotalCapacity)*(1-(WT_DELETE/100))-job.PassedCapacity)*100/(WT_UPLOAD*job.Avg)) //job.Progress= job.Progress+float64(WT_DOWLOAD*float64(size/job.TotalCapacity))
+		logger.Printf("[INFO] Progress %d  Time-required = %d seconds", job.Progress, int64(job.TimeRequired))
+		db.DbAdapter.UpdateJob(job)
+	} else {
+		PassedCapacity := job.PassedCapacity + float64(size)*(wt/100)
+		job.PassedCapacity = math.Round(PassedCapacity*100) / 100
+		job.Progress = int64(job.PassedCapacity * 100 / float64(job.TotalCapacity))
+		db.DbAdapter.UpdateJob(job)
+	}
+	defer logfile.Close()
 }
