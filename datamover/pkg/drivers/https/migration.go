@@ -28,13 +28,13 @@ import (
 	"github.com/opensds/multi-cloud/backend/proto"
 	"github.com/opensds/multi-cloud/dataflow/pkg/model"
 	flowtype "github.com/opensds/multi-cloud/dataflow/pkg/model"
-	"github.com/opensds/multi-cloud/datamover/pkg/amazon/s3"
-	"github.com/opensds/multi-cloud/datamover/pkg/azure/blob"
-	"github.com/opensds/multi-cloud/datamover/pkg/ceph/s3"
+	s3mover "github.com/opensds/multi-cloud/datamover/pkg/amazon/s3"
+	blobmover "github.com/opensds/multi-cloud/datamover/pkg/azure/blob"
+	cephs3mover "github.com/opensds/multi-cloud/datamover/pkg/ceph/s3"
 	"github.com/opensds/multi-cloud/datamover/pkg/db"
-	"github.com/opensds/multi-cloud/datamover/pkg/gcp/s3"
-	"github.com/opensds/multi-cloud/datamover/pkg/hw/obs"
-	"github.com/opensds/multi-cloud/datamover/pkg/ibm/cos"
+	Gcps3mover "github.com/opensds/multi-cloud/datamover/pkg/gcp/s3"
+	obsmover "github.com/opensds/multi-cloud/datamover/pkg/hw/obs"
+	ibmcosmover "github.com/opensds/multi-cloud/datamover/pkg/ibm/cos"
 	. "github.com/opensds/multi-cloud/datamover/pkg/utils"
 	pb "github.com/opensds/multi-cloud/datamover/proto"
 	s3utils "github.com/opensds/multi-cloud/s3/pkg/utils"
@@ -115,7 +115,6 @@ func doMove(ctx context.Context, objs []*osdss3.Object, capa chan int64, th chan
 
 	locMap := make(map[string]*LocationInfo)
 	for i := 0; i < len(objs); i++ {
-
 		if objs[i].Tier == s3utils.Tier999 {
 			// archived object cannot be moved currently
 			logger.Printf("Object(key:%s) is archived, cannot be migrated.\n", objs[i].ObjectKey)
@@ -663,14 +662,14 @@ func move(ctx context.Context, obj *osdss3.Object, capa chan int64, th chan int,
 		logger.Printf(" [INFO]  %v size of migrated object ", obj.Size)
 		progressTimeCalculation(job, obj.Size, WT_DELETE, time.Now())
 		//js.Deleted= js.Deleted+obj.Size
-		job.PassedCapacity = job.PassedCapacity + WT_DELETE*float64(obj.Size)/100
-		job.PassedCapacity = math.Round(job.PassedCapacity*100) / 100
-		job.Progress = int64(job.PassedCapacity * 100 / float64(job.TotalCapacity))
-		//job.Progress= job.Progress+(WT_DELETE*obj.Size/job.TotalCapacity)
-		//speed:=gospeed()*1000
-		//time_rem:= (job.TotalCapacity-int64(job.PassedCapacity))*40/(100*int64(speed))
-		logger.Printf("[INFO] Progress %d%%  Time remain:  seconds \n", job.Progress)
-		db.DbAdapter.UpdateJob(job)
+		//job.PassedCapacity = job.PassedCapacity + WT_DELETE*float64(obj.Size)/100
+		//job.PassedCapacity = math.Round(job.PassedCapacity*100) / 100
+		//job.Progress = int64(job.PassedCapacity * 100 / float64(job.TotalCapacity))
+		////job.Progress= job.Progress+(WT_DELETE*obj.Size/job.TotalCapacity)
+		////speed:=gospeed()*1000
+		////time_rem:= (job.TotalCapacity-int64(job.PassedCapacity))*40/(100*int64(speed))
+		//logger.Printf("[INFO] Progress %d%%  Time remain:  seconds \n", job.Progress)
+		//db.DbAdapter.UpdateJob(job)
 
 	} else {
 		logger.Printf(" [ERROR] migrate object[%s] failed.", obj.ObjectKey)
@@ -716,7 +715,6 @@ func runjob(in *pb.RunJobRequest) error {
 	if err != nil {
 		j.Status = flowtype.JOB_STATUS_FAILED
 		j.EndTime = time.Now()
-
 		updateJob(&j)
 		return err
 	}
