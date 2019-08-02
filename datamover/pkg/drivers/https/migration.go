@@ -692,9 +692,17 @@ func updateJob(j *flowtype.Job) {
 }
 
 func runjob(in *pb.RunJobRequest) error {
+	logfile, err = os.OpenFile(filepath+in.Id+".txt", os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
+	if err != nil {
+		log.Println(err)
+	}
 
-	logger.Println("Runjob is called in datamover service.")
-	logger.Printf("Request: %+v\n", in)
+	logger := log.New(logfile, "", log.LstdFlags)
+	var mw = io.MultiWriter(logfile, os.Stdout)
+	logger.SetOutput(mw)
+
+	log.Println("Runjob is called in datamover service.")
+	log.Printf("Request: %+v\n", in)
 
 	// set context tiemout
 	ctx := context.Background()
@@ -713,6 +721,7 @@ func runjob(in *pb.RunJobRequest) error {
 	// get location information
 	srcLoca, destLoca, err := getLocationInfo(ctx, &j, in)
 	if err != nil {
+		logger.Printf("[ERROR] Incorrect Credentials")
 		j.Status = flowtype.JOB_STATUS_FAILED
 		j.EndTime = time.Now()
 		updateJob(&j)
@@ -733,14 +742,7 @@ func runjob(in *pb.RunJobRequest) error {
 		db.DbAdapter.UpdateJob(&j)
 		return err
 	}
-	logfile, err = os.OpenFile(filepath+in.Id+".txt", os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
-	if err != nil {
-		log.Println(err)
-	}
 
-	logger := log.New(logfile, "", log.LstdFlags)
-	var mw = io.MultiWriter(logfile, os.Stdout)
-	logger.SetOutput(mw)
 	totalObj := len(objs)
 	if totalObj == 0 {
 		logger.Printf("[WARN] Bucket is empty.")
