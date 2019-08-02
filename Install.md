@@ -30,8 +30,16 @@ echo 'export GOPATH=$HOME/gopath' >> /etc/profile
 source /etc/profile
 ```
 
+### For Existing Environment
+Run following steps
+```cassandraql
+cd /root/gopath/src/github.com/opensds/multi-cloud
+docker-compose down
+cd
+rm -rf /root/multi-cloud-pv/
+rm -rf /root/gopath/src/github.com/opensds/multi-cloud
+```
 ### Clone OpenSDS Multi-Cloud branch from Click2Cloud
-
 ```cassandraql
 mkdir -p /root/gopath/src/github.com/opensds
 git clone -b cloud_brain_features  https://github.com/Click2Cloud/multi-cloud-pv.git
@@ -54,6 +62,7 @@ docker-compose up -d
 docker ps -a
 docker logs { container ID }
 ```
+
 
 ## Testing
 
