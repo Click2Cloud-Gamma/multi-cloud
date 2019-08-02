@@ -736,6 +736,7 @@ func runjob(in *pb.RunJobRequest) error {
 	var offset, limit int32 = 0, 1000
 	objs, err := getObjs(ctx, in, srcLoca, offset, limit)
 	if err != nil {
+		logger.Printf("[ERROR] Incorrect Credentials")
 		//update database
 		j.Status = flowtype.JOB_STATUS_FAILED
 		j.EndTime = time.Now()
