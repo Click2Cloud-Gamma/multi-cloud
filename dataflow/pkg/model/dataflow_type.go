@@ -152,6 +152,7 @@ type Job struct {
 	Progress       int64     `json:"progress" bson:"progress"`
 	Avg            float64   `json:""avg_speed" bson:"avg_speed"`
 	TimeRequired   int64     `json:"timeRequired" bson:"timeRequired"`
+	Msg            string    `json:"msg" bson:"msg"`
 }
 
 type Backend struct {

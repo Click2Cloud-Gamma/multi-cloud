@@ -195,6 +195,7 @@ message Job {
 	int64 passedCount = 16;
 	int64 progress = 17;
 	int64 timeRequired = 18;
+	string msg = 19;
 }
 
 message GetJobRequest {

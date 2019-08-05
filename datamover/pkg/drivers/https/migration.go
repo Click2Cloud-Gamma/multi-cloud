@@ -722,6 +722,7 @@ func runjob(in *pb.RunJobRequest) error {
 	srcLoca, destLoca, err := getLocationInfo(ctx, &j, in)
 	if err != nil {
 		logger.Printf("[ERROR] Incorrect Credentials")
+		j.Msg = "Incorrect Credentials"
 		j.Status = flowtype.JOB_STATUS_FAILED
 		j.EndTime = time.Now()
 		updateJob(&j)
@@ -738,6 +739,7 @@ func runjob(in *pb.RunJobRequest) error {
 	if err != nil {
 		logger.Printf("[ERROR] Incorrect Credentials")
 		//update database
+		j.Msg = "Incorrect Credentials"
 		j.Status = flowtype.JOB_STATUS_FAILED
 		j.EndTime = time.Now()
 		db.DbAdapter.UpdateJob(&j)
@@ -747,6 +749,7 @@ func runjob(in *pb.RunJobRequest) error {
 	totalObj := len(objs)
 	if totalObj == 0 {
 		logger.Printf("[WARN] Bucket is empty.")
+		j.Msg = "Bucket is empty"
 	}
 	for i := 0; i < totalObj; i++ {
 		j.TotalCount++
@@ -837,8 +840,19 @@ func runjob(in *pb.RunJobRequest) error {
 		errmsg := strconv.FormatInt(totalObjs, 10) + " objects, passed " + strconv.FormatInt(passedCount, 10)
 		logger.Printf("run job failed: %s\n", errmsg)
 		ret = errors.New("failed")
+		if totalObjs > 1 {
+			j.Msg = "Migration failed: " + strconv.FormatInt(passedCount, 10) + " object migrated out of " + strconv.FormatInt(totalObjs, 10) + " objects"
+		} else {
+			j.Msg = "Migration failed: " + strconv.FormatInt(passedCount, 10) + " object migrated out of " + strconv.FormatInt(totalObjs, 10) + " object"
+		}
+
 		j.Status = flowtype.JOB_STATUS_FAILED
 	} else {
+		if totalObjs > 1 {
+			j.Msg = "Migration Successful: " + strconv.FormatInt(totalObjs, 10) + " objects migrated"
+		} else {
+			j.Msg = "Migration Successful: " + strconv.FormatInt(totalObjs, 10) + " object migrated"
+		}
 		j.Status = flowtype.JOB_STATUS_SUCCEED
 	}
 

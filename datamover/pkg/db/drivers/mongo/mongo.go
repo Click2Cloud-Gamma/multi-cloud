@@ -107,7 +107,9 @@ func (ad *adapter) UpdateJob(job *Job) error {
 	if job.TimeRequired != 0 {
 		j.TimeRequired = job.TimeRequired
 	}
-
+	if job.Msg != "" {
+		j.Msg = job.Msg
+	}
 	err = c.Update(bson.M{"_id": j.Id}, &j)
 	if err != nil {
 		log.Logf("Update job in database failed, err:%v\n", err)
