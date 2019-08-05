@@ -42,7 +42,8 @@ rm -rf /root/gopath/src/github.com/opensds/multi-cloud
 ### Clone OpenSDS Multi-Cloud branch from Click2Cloud
 ```cassandraql
 mkdir -p /root/gopath/src/github.com/opensds
-git clone -b cloud_brain_features  https://github.com/Click2Cloud/multi-cloud-pv.git
+git clone -b cloud_brain_features_v1  https://github.com/Click2Cloud/multi-cloud-pv.git
+#Old Stable branch: cloud_brain_features
 ```
 * Enter Username: Click2Cloud-Gamma
 * Password: Root#123$$
@@ -183,7 +184,7 @@ Alibaba: "aws-s3"
 }
 ```
 
-##### To get Job Status with Progress and Time Required
+##### To get Job Status with Progress, Time Required and Message parameter
 
 * GET method: http://{{ 127.0.0.1 }}:8089/v1/adminTenantId/jobs/{{ JOB-ID }}
 
@@ -207,6 +208,7 @@ Alibaba: "aws-s3"
         "passedCount": 6,
         "progress": 26
         "timeRequired": 421
+        "msg": "Migration Successful: 3 objects migrated"
     }
 }
 ```
