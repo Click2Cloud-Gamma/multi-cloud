@@ -46,16 +46,16 @@ import (
 
 var simuRoutines = 10
 var PART_SIZE int64 = 16 * 1024 * 1024 //The max object size that can be moved directly, default is 16M.
-var JOB_RUN_TIME_MAX = 86400           //seconds, equals 1 day
+var JOB_RUN_TIME_MAX = 1000            //seconds, equals 1 day
 var s3client osdss3.S3Service
 var bkendclient backend.BackendService
 var logfile *os.File
 var err error
-var filepath = "/opt/"
+var filepath = "E:/"
 
-const WT_DOWLOAD = 50
-const WT_UPLOAD = 50
-const WT_DELETE = 0
+const WT_DOWLOAD = 48
+const WT_UPLOAD = 48
+const WT_DELETE = 4
 
 var logger = log.New(os.Stdout, "", log.LstdFlags)
 
@@ -179,9 +179,9 @@ func MoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *LocationInfo, 
 			err = errors.New("not support source backend type")
 		}
 	}
-
 	if err != nil {
 		logger.Printf("[ERROR] download object[%s] failed.", obj.ObjectKey)
+		job.Msg = "Download failed: " + err.Error()
 		return err
 	}
 	progressTimeCalculation(job, size, WT_DOWLOAD, start_time)
@@ -237,6 +237,7 @@ func MoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *LocationInfo, 
 		return errors.New("not support destination backend type.")
 	}
 	if err != nil {
+		job.Msg = "Upload Object failed: " + err.Error()
 		logger.Printf("[ERROR] upload object[bucket:%s,key:%s] failed, err:%v.\n", destLoca.BucketName, uploadObjKey, err)
 	} else {
 		log.Printf("[INFO] upload object[bucket:%s,key:%s] successfully.\n", destLoca.BucketName, uploadObjKey)
@@ -430,6 +431,7 @@ func MultipartMoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *Locat
 			downloadMover, err = multiPartDownloadInit(srcLoca)
 			if err != nil {
 				return err
+				job.Msg = err.Error()
 			}
 		}
 		start_time := time.Now()
@@ -438,6 +440,7 @@ func MultipartMoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *Locat
 		//TODO ***** here we are getting passed capacity of part)
 		if err != nil {
 			logger.Printf("[ERROR] Download failed %v ", err)
+			job.Msg = "Download failed: " + err.Error()
 			return errors.New("download failed")
 		} else {
 			progressTimeCalculation(job, currPartSize, WT_DOWLOAD, start_time)
@@ -473,6 +476,7 @@ func MultipartMoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *Locat
 			//init multipart upload
 			uploadMover, uploadId, err = multiPartUploadInit(uploadObjKey, destLoca)
 			if err != nil {
+				job.Msg = err.Error()
 				return err
 			} else {
 				addMultipartUpload(obj.ObjectKey, destLoca.VirBucket, destLoca.BakendName, uploadId)
@@ -487,6 +491,7 @@ func MultipartMoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *Locat
 			} else {
 				deleteMultipartUpload(obj.ObjectKey, destLoca.VirBucket, destLoca.BakendName, uploadId)
 			}
+			job.Msg = "Upload failed: " + err.Error()
 			logger.Printf("[ERROR] multipart upload failed %v ", err1)
 			return errors.New("[ERROR] multipart upload failed")
 		} else {
@@ -618,6 +623,7 @@ func move(ctx context.Context, obj *osdss3.Object, capa chan int64, th chan int,
 		}
 
 		if err != nil {
+			job.Msg = err.Error()
 			succeed = false
 		}
 	}
@@ -725,6 +731,7 @@ func runjob(in *pb.RunJobRequest) error {
 		j.Msg = "Incorrect Credentials"
 		j.Status = flowtype.JOB_STATUS_FAILED
 		j.EndTime = time.Now()
+		j.TimeRequired = int64(0)
 		updateJob(&j)
 		return err
 	}
@@ -742,6 +749,7 @@ func runjob(in *pb.RunJobRequest) error {
 		j.Msg = "Incorrect Credentials"
 		j.Status = flowtype.JOB_STATUS_FAILED
 		j.EndTime = time.Now()
+		j.TimeRequired = int64(0)
 		db.DbAdapter.UpdateJob(&j)
 		return err
 	}
@@ -750,6 +758,7 @@ func runjob(in *pb.RunJobRequest) error {
 	if totalObj == 0 {
 		logger.Printf("[WARN] Bucket is empty.")
 		j.Msg = "Bucket is empty"
+		j.TimeRequired = int64(0)
 	}
 	for i := 0; i < totalObj; i++ {
 		j.TotalCount++
@@ -762,6 +771,7 @@ func runjob(in *pb.RunJobRequest) error {
 	if err != nil || j.TotalCount == 0 || j.TotalCapacity == 0 {
 		j.Status = flowtype.JOB_STATUS_FAILED
 		j.EndTime = time.Now()
+		j.TimeRequired = int64(0)
 		updateJob(&j)
 		return err
 	}
@@ -778,6 +788,7 @@ func runjob(in *pb.RunJobRequest) error {
 			//update database
 			j.Status = flowtype.JOB_STATUS_FAILED
 			j.EndTime = time.Now()
+			j.TimeRequired = int64(0)
 			db.DbAdapter.UpdateJob(&j)
 			return err
 		}
@@ -814,6 +825,7 @@ func runjob(in *pb.RunJobRequest) error {
 					j.PassedCount = (int64(passedCount))
 					//j.PassedCapacity = capacity
 					if capacity == j.TotalCapacity {
+						j.TimeRequired = int64(0)
 						j.Progress = int64(capacity * 100 / j.TotalCapacity)
 					}
 					logger.Printf("[INFO] Passed capacity:%d,TotalCapacity:%d Progress:%d\n", capacity, j.TotalCapacity, j.Progress)
@@ -824,6 +836,7 @@ func runjob(in *pb.RunJobRequest) error {
 			{
 				tmout = true
 				logger.Println("Timout.")
+				j.Msg = "Time out"
 			}
 		}
 		if count >= totalObjs || tmout {
@@ -840,19 +853,23 @@ func runjob(in *pb.RunJobRequest) error {
 		errmsg := strconv.FormatInt(totalObjs, 10) + " objects, passed " + strconv.FormatInt(passedCount, 10)
 		logger.Printf("run job failed: %s\n", errmsg)
 		ret = errors.New("failed")
-		if totalObjs > 1 {
-			j.Msg = "Migration failed: " + strconv.FormatInt(passedCount, 10) + " object migrated out of " + strconv.FormatInt(totalObjs, 10) + " objects"
-		} else {
-			j.Msg = "Migration failed: " + strconv.FormatInt(passedCount, 10) + " object migrated out of " + strconv.FormatInt(totalObjs, 10) + " object"
+		if j.Msg == "" {
+			if totalObjs > 1 {
+				j.Msg = "Migration failed: " + strconv.FormatInt(passedCount, 10) + " object migrated out of " + strconv.FormatInt(totalObjs, 10) + " objects"
+			} else {
+				j.Msg = "Migration failed: " + strconv.FormatInt(passedCount, 10) + " object migrated out of " + strconv.FormatInt(totalObjs, 10) + " object"
+			}
 		}
 
 		j.Status = flowtype.JOB_STATUS_FAILED
 	} else {
+
 		if totalObjs > 1 {
 			j.Msg = "Migration Successful: " + strconv.FormatInt(totalObjs, 10) + " objects migrated"
 		} else {
 			j.Msg = "Migration Successful: " + strconv.FormatInt(totalObjs, 10) + " object migrated"
 		}
+		j.TimeRequired = int64(0)
 		j.Status = flowtype.JOB_STATUS_SUCCEED
 	}
 
@@ -882,14 +899,15 @@ func progressTimeCalculation(job *model.Job, size int64, wt float64, start_time 
 	if wt >= 40 {
 		job.PassedCapacity = job.PassedCapacity + wt*float64(size)/100
 		job.PassedCapacity = math.Round(job.PassedCapacity*100) / 100
-		job.Progress = int64(job.PassedCapacity * 100 / float64(job.TotalCapacity))
 		speed := float64(size) / float64(time.Now().Sub(start_time).Seconds())
 		if job.Avg < speed {
 			job.Avg = speed
 		} //else {	if speed < 0.1*job.Avg{
 		//	job.Avg=speed
 		//}
-		job.TimeRequired = 3 * int64((float64(job.TotalCapacity)*(1-(WT_DELETE/100))-job.PassedCapacity)*100/(WT_UPLOAD*job.Avg)) //job.Progress= job.Progress+float64(WT_DOWLOAD*float64(size/job.TotalCapacity))
+		job.TimeRequired = 3 * int64((float64(job.TotalCapacity)*(1-(WT_DELETE/100))-job.PassedCapacity)*100/(WT_UPLOAD*job.Avg))
+		job.Progress = int64(job.PassedCapacity * 100 / float64(job.TotalCapacity))
+		//job.Progress= job.Progress+float64(WT_DOWLOAD*float64(size/job.TotalCapacity))
 		logger.Printf("[INFO] Progress %d  Time-required = %d seconds", job.Progress, int64(job.TimeRequired))
 		db.DbAdapter.UpdateJob(job)
 	} else {

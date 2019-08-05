@@ -16,7 +16,6 @@ package mongo
 
 import (
 	"errors"
-
 	"github.com/globalsign/mgo"
 	"github.com/globalsign/mgo/bson"
 	"github.com/micro/go-log"
@@ -106,6 +105,9 @@ func (ad *adapter) UpdateJob(job *Job) error {
 	}
 	if job.TimeRequired != 0 {
 		j.TimeRequired = job.TimeRequired
+	}
+	if job.TimeRequired == 0 {
+		j.TimeRequired = 0
 	}
 	if job.Msg != "" {
 		j.Msg = job.Msg
