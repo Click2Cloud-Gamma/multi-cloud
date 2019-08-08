@@ -50,7 +50,7 @@ var s3client osdss3.S3Service
 var bkendclient backend.BackendService
 var logfile *os.File
 var err error
-var filepath = "E:/"
+var filepath = "/opt/"
 
 const WT_DOWLOAD = 48
 const WT_UPLOAD = 48
