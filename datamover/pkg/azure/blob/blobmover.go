@@ -52,8 +52,11 @@ func handleAzureBlobErrors(err error) error {
 			case string(azblob.StorageErrorCodeAuthenticationFailed):
 				log.Log("azure error: permission denied.")
 				return errors.New(DMERR_NoPermission)
+			case string(azblob.StorageErrorCodeContainerNotFound):
+				log.Log("azure error: container not found.")
+				return errors.New("Container or Bucket not found")
 			default:
-				return err
+				return errors.New("Invalid Credentials or network issue")
 			}
 		}
 	}

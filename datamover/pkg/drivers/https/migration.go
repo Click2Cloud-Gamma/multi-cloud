@@ -217,7 +217,6 @@ func MoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *LocationInfo, 
 	}
 	if err != nil {
 		logger.Printf("[ERROR] download object[%s] failed.", obj.ObjectKey)
-		job.Msg = "Download failed: " + err.Error()
 		return err
 	}
 	progressTimeCalculation(job, size, WT_DOWLOAD, start_time)
@@ -260,7 +259,6 @@ func MoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *LocationInfo, 
 		return errors.New("not support destination backend type.")
 	}
 	if err != nil {
-		job.Msg = "Upload Object failed: " + err.Error()
 		logger.Printf("[ERROR] upload object[bucket:%s,key:%s] failed, err:%v.\n", destLoca.BucketName, uploadObjKey, err)
 		if job.Msg == "Migration Aborted" {
 			err := "Migration Aborted"
@@ -270,6 +268,7 @@ func MoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *LocationInfo, 
 			db.DbAdapter.UpdateJob(job)
 			return errors.New(err)
 		}
+		return err
 	} else {
 		log.Printf("[INFO] upload object[bucket:%s,key:%s] successfully.\n", destLoca.BucketName, uploadObjKey)
 		//js.Uploaded=js.Uploaded+size
@@ -467,7 +466,6 @@ func MultipartMoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *Locat
 			downloadMover, err = multiPartDownloadInit(srcLoca)
 			if err != nil {
 				return err
-				job.Msg = err.Error()
 			}
 		}
 		start_time := time.Now()
@@ -475,8 +473,7 @@ func MultipartMoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *Locat
 		//TODO ***** here we are getting passed capacity of part)
 		if err != nil {
 			logger.Printf("[ERROR] Download failed %v ", err)
-			job.Msg = "Download failed: " + err.Error()
-			return errors.New("download failed")
+			return err
 		} else {
 			progressTimeCalculation(job, currPartSize, WT_DOWLOAD, start_time)
 			if job.Msg == "Migration Aborted" {
@@ -511,9 +508,9 @@ func MultipartMoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *Locat
 			} else {
 				deleteMultipartUpload(obj.ObjectKey, destLoca.VirBucket, destLoca.BakendName, uploadId)
 			}
-			job.Msg = "Upload failed: " + err.Error()
+			//job.Msg = "Upload failed: " + err.Error()
 			logger.Printf("[ERROR] multipart upload failed %v ", err1)
-			return errors.New("[ERROR] multipart upload failed")
+			return err1
 		} else {
 			progressTimeCalculation(job, currPartSize, WT_DOWLOAD, start_time)
 			if job.Msg == "Migration Aborted" {
