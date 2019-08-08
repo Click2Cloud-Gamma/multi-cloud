@@ -39,6 +39,7 @@ var (
 	JOB_STATUS_RUNNING = "running"
 	JOB_STATUS_SUCCEED = "succeed"
 	JOB_STATUS_FAILED  = "failed"
+	JOB_STATUS_ABORTED = "aborted"
 )
 
 var (
@@ -50,6 +51,7 @@ var (
 	ERR_POLICY_NOT_EXIST    = errors.New("policy does not exist")
 	ERR_INVALID_CONN_NAME   = errors.New("invalid connector name")
 	ERR_CONN_NOT_EXIST      = errors.New("connector does not esit")
+	ERR_JOB_COMPLETED       = errors.New("job already finished")
 	ERR_PLAN_NOT_EXIST      = errors.New("plan does not exist")
 	ERR_INVALID_PLAN_NAME   = errors.New("invalid plan name")
 	ERR_DEST_SRC_CONN_EQUAL = errors.New("source is the same as destination")

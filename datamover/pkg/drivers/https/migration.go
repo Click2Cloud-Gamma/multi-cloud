@@ -16,10 +16,6 @@ package migration
 
 import (
 	"context"
-	"io"
-	"log"
-	"math"
-
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -28,17 +24,20 @@ import (
 	"github.com/opensds/multi-cloud/backend/proto"
 	"github.com/opensds/multi-cloud/dataflow/pkg/model"
 	flowtype "github.com/opensds/multi-cloud/dataflow/pkg/model"
-	s3mover "github.com/opensds/multi-cloud/datamover/pkg/amazon/s3"
-	blobmover "github.com/opensds/multi-cloud/datamover/pkg/azure/blob"
-	cephs3mover "github.com/opensds/multi-cloud/datamover/pkg/ceph/s3"
+	"github.com/opensds/multi-cloud/datamover/pkg/amazon/s3"
+	"github.com/opensds/multi-cloud/datamover/pkg/azure/blob"
+	"github.com/opensds/multi-cloud/datamover/pkg/ceph/s3"
 	"github.com/opensds/multi-cloud/datamover/pkg/db"
-	Gcps3mover "github.com/opensds/multi-cloud/datamover/pkg/gcp/s3"
-	obsmover "github.com/opensds/multi-cloud/datamover/pkg/hw/obs"
-	ibmcosmover "github.com/opensds/multi-cloud/datamover/pkg/ibm/cos"
+	"github.com/opensds/multi-cloud/datamover/pkg/gcp/s3"
+	"github.com/opensds/multi-cloud/datamover/pkg/hw/obs"
+	"github.com/opensds/multi-cloud/datamover/pkg/ibm/cos"
 	. "github.com/opensds/multi-cloud/datamover/pkg/utils"
 	pb "github.com/opensds/multi-cloud/datamover/proto"
 	s3utils "github.com/opensds/multi-cloud/s3/pkg/utils"
 	osdss3 "github.com/opensds/multi-cloud/s3/proto"
+	"io"
+	"log"
+	"math"
 	"os"
 	"strconv"
 	"time"
@@ -46,7 +45,7 @@ import (
 
 var simuRoutines = 10
 var PART_SIZE int64 = 16 * 1024 * 1024 //The max object size that can be moved directly, default is 16M.
-var JOB_RUN_TIME_MAX = 1000            //seconds, equals 1 day
+var JOB_RUN_TIME_MAX = 2592000         //seconds, equals 1 day
 var s3client osdss3.S3Service
 var bkendclient backend.BackendService
 var logfile *os.File
@@ -104,6 +103,15 @@ func doMove(ctx context.Context, objs []*osdss3.Object, capa chan int64, th chan
 	//Only three routines allowed to be running at the same time
 	//th := make(chan int, simuRoutines).
 	jobid := fmt.Sprintf("%x", string(job.Id))
+	db.DbAdapter.UpdateJob(job)
+	if job.Msg == "Migration Aborted" {
+		job.TimeRequired = 0
+		job.EndTime = time.Now()
+		job.Status = flowtype.JOB_STATUS_ABORTED
+		db.DbAdapter.UpdateJob(job)
+
+		return
+	}
 	logfile, err = os.OpenFile(filepath+jobid+".txt", os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
 		log.Println(err)
@@ -112,9 +120,17 @@ func doMove(ctx context.Context, objs []*osdss3.Object, capa chan int64, th chan
 	var mw = io.MultiWriter(logfile, os.Stdout)
 	logger.SetOutput(mw)
 	defer logfile.Close()
-
 	locMap := make(map[string]*LocationInfo)
 	for i := 0; i < len(objs); i++ {
+		// To Cancel Job
+		db.DbAdapter.UpdateJob(job)
+		if job.Msg == "Migration Aborted" {
+			job.TimeRequired = 0
+			job.EndTime = time.Now()
+			job.Status = flowtype.JOB_STATUS_ABORTED
+			db.DbAdapter.UpdateJob(job)
+			break
+		}
 		if objs[i].Tier == s3utils.Tier999 {
 			// archived object cannot be moved currently
 			logger.Printf("Object(key:%s) is archived, cannot be migrated.\n", objs[i].ObjectKey)
@@ -126,9 +142,20 @@ func doMove(ctx context.Context, objs []*osdss3.Object, capa chan int64, th chan
 		th <- 1
 		log.Printf(" doMigrate: produce 1 routine, len(th):%d.\n", len(th))
 	}
+	if job.Msg == "Migration Aborted" {
+		db.DbAdapter.UpdateJob(job)
+		return
+	}
 }
 
 func MoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *LocationInfo, job *model.Job) error {
+	if job.Msg == "Migration Aborted" {
+		job.TimeRequired = 0
+		job.EndTime = time.Now()
+		job.Status = flowtype.JOB_STATUS_ABORTED
+		db.DbAdapter.UpdateJob(job)
+		return errors.New(job.Msg)
+	}
 	jobid := fmt.Sprintf("%x", string(job.Id))
 	logfile, err = os.OpenFile(filepath+jobid+".txt", os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
@@ -153,6 +180,15 @@ func MoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *LocationInfo, 
 		downloadObjKey = srcLoca.VirBucket + "/" + downloadObjKey
 	}
 	//download
+	if job.Msg == "Migration Aborted" {
+		err := "Migration Aborted"
+		job.TimeRequired = 0
+		job.EndTime = time.Now()
+		job.Status = flowtype.JOB_STATUS_ABORTED
+		db.DbAdapter.UpdateJob(job)
+
+		return errors.New(err)
+	}
 	start_time := time.Now()
 	switch srcLoca.StorType {
 	case flowtype.STOR_TYPE_HW_OBS, flowtype.STOR_TYPE_HW_FUSIONSTORAGE, flowtype.STOR_TYPE_HW_FUSIONCLOUD:
@@ -185,29 +221,16 @@ func MoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *LocationInfo, 
 		return err
 	}
 	progressTimeCalculation(job, size, WT_DOWLOAD, start_time)
-	//logger.Printf("Download object[%s] succeed, size=%d\n", obj.ObjectKey, size)
-	//job.PassedCapacity = job.PassedCapacity + WT_DOWLOAD*float64(size)/100
-	//job.PassedCapacity = math.Round(job.PassedCapacity*100) / 100
-	//job.Progress = int64(job.PassedCapacity * 100 / float64(job.TotalCapacity))
-	////job.Progress= job.Progress+(WT_DOWLOAD*size/job.TotalCapacity)
-	////speed:=gospeed()*1000
-	////time_rem:= (job.TotalCapacity-int64(job.PassedCapacity))*40/(100*int64(speed))
-	//speed:= float64(size)/float64(time.Now().Sub(start_time).Seconds()) // B/nano-seconds
-	////speed:= speed_nano*(10^9)
-	////speed:= float64(job.PassedCapacity)/float64(time.Now().Sub(start_time).Seconds())
-	//if job.Avg<speed {
-	//	job.Avg=speed
-	//} else {
-	//	//	if speed < 0.1*job.Avg{
-	//	//	job.Avg=speed
-	//	//}
-	//}
-	//job.TimeRequired=3*int64((float64(job.TotalCapacity)*(1-(WT_DELETE/100))-job.PassedCapacity)*100/(WT_UPLOAD*job.Avg))
-	//////job.Progress= job.Progress+float64(WT_DOWLOAD*float64(size/job.TotalCapacity))
-	//logger.Printf("[INFO] Progress %d%%  Time remain: %d seconds \n", job.Progress, job.TimeRequired)
-	//
-	//db.DbAdapter.UpdateJob(job)
-	//upload
+	if job.Msg == "Migration Aborted" {
+		err := "Migration Aborted"
+		job.TimeRequired = 0
+		job.EndTime = time.Now()
+		job.Status = flowtype.JOB_STATUS_ABORTED
+		db.DbAdapter.UpdateJob(job)
+		return errors.New(err)
+	}
+	log.Printf("Download object[%s] succeed, size=%d\n", obj.ObjectKey, size)
+
 	uploadObjKey := obj.ObjectKey
 	if srcLoca.VirBucket != "" {
 		uploadObjKey = destLoca.VirBucket + "/" + uploadObjKey
@@ -239,27 +262,27 @@ func MoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *LocationInfo, 
 	if err != nil {
 		job.Msg = "Upload Object failed: " + err.Error()
 		logger.Printf("[ERROR] upload object[bucket:%s,key:%s] failed, err:%v.\n", destLoca.BucketName, uploadObjKey, err)
+		if job.Msg == "Migration Aborted" {
+			err := "Migration Aborted"
+			job.TimeRequired = 0
+			job.EndTime = time.Now()
+			job.Status = flowtype.JOB_STATUS_ABORTED
+			db.DbAdapter.UpdateJob(job)
+			return errors.New(err)
+		}
 	} else {
 		log.Printf("[INFO] upload object[bucket:%s,key:%s] successfully.\n", destLoca.BucketName, uploadObjKey)
 		//js.Uploaded=js.Uploaded+size
+
 		progressTimeCalculation(job, size, WT_DOWLOAD, start_time)
-		//job.PassedCapacity = job.PassedCapacity + WT_UPLOAD*float64(size)/100
-		//job.PassedCapacity = math.Round(job.PassedCapacity*100) / 100
-		//job.Progress = int64(job.PassedCapacity * 100 / float64(job.TotalCapacity))
-		////job.Progress= job.Progress+(WT_UPLOAD*size/job.TotalCapacity)
-		//speed:= float64(size)/float64(time.Now().Sub(start_time).Seconds())
-		////speed:= float64(job.PassedCapacity)/float64(time.Now().Sub(start_time).Seconds())
-		//if job.Avg<speed {
-		//	job.Avg=speed
-		//} else {
-		////	if speed < 0.1*job.Avg{
-		////	job.Avg=speed
-		////}
-		//}
-		//job.TimeRequired=3*int64((float64(job.TotalCapacity)*(1-(WT_DELETE/100))-job.PassedCapacity)*100/(WT_UPLOAD*job.Avg))
-		//////job.Progress= job.Progress+float64(WT_DOWLOAD*float64(size/job.TotalCapacity))
-		//logger.Printf("[INFO] Progress %d%%  Time remain: %d seconds \n", job.Progress, int(job.TimeRequired))
-		//db.DbAdapter.UpdateJob(job)
+		if job.Msg == "Migration Aborted" {
+			err := "Migration Aborted"
+			job.TimeRequired = 0
+			job.EndTime = time.Now()
+			job.Status = flowtype.JOB_STATUS_ABORTED
+			db.DbAdapter.UpdateJob(job)
+			return errors.New(err)
+		}
 	}
 
 	return err
@@ -354,7 +377,6 @@ func completeMultipartUpload(objKey string, destLoca *LocationInfo, mover MoveWo
 	default:
 		logger.Printf(" unsupport storType[%s] to download.\n", destLoca.StorType)
 	}
-
 	return errors.New("unsupport storage type")
 }
 
@@ -364,7 +386,6 @@ func addMultipartUpload(objKey, virtBucket, backendName, uploadId string) {
 	if len(uploadId) == 0 {
 		return
 	}
-
 	record := osdss3.MultipartUploadRecord{ObjectKey: objKey, Bucket: virtBucket, Backend: backendName, UploadId: uploadId}
 	record.InitTime = time.Now().Unix()
 
@@ -384,6 +405,13 @@ func deleteMultipartUpload(objKey, virtBucket, backendName, uploadId string) {
 }
 
 func MultipartMoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *LocationInfo, job *model.Job) error {
+	db.DbAdapter.UpdateJob(job)
+	if job.Msg == "Migration Aborted" {
+		job.Status = flowtype.JOB_STATUS_ABORTED
+		job.TimeRequired = 0
+		job.EndTime = time.Now()
+		return errors.New(job.Msg)
+	}
 	jobid := fmt.Sprintf("%x", string(job.Id))
 	logfile, err = os.OpenFile(filepath+jobid+".txt", os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
@@ -416,6 +444,14 @@ func MultipartMoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *Locat
 	var uploadId string
 	currPartSize := PART_SIZE
 	for i = 0; i < partCount; i++ {
+		if job.Msg == "Migration Aborted" {
+			job.TimeRequired = 0
+			job.EndTime = time.Now()
+			job.Status = flowtype.JOB_STATUS_ABORTED
+			db.DbAdapter.UpdateJob(job)
+			break
+			return errors.New(job.Msg)
+		}
 		partNumber := i + 1
 		offset := int64(i) * PART_SIZE
 		if i+1 == partCount {
@@ -436,7 +472,6 @@ func MultipartMoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *Locat
 		}
 		start_time := time.Now()
 		readSize, err := downloadMover.DownloadRange(downloadObjKey, srcLoca, buf, start, end)
-
 		//TODO ***** here we are getting passed capacity of part)
 		if err != nil {
 			logger.Printf("[ERROR] Download failed %v ", err)
@@ -444,33 +479,19 @@ func MultipartMoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *Locat
 			return errors.New("download failed")
 		} else {
 			progressTimeCalculation(job, currPartSize, WT_DOWLOAD, start_time)
-			//job.PassedCapacity = job.PassedCapacity + WT_DOWLOAD*float64(currPartSize)/100
-			//job.PassedCapacity = math.Round(job.PassedCapacity*100) / 100
-			//job.Progress = int64(job.PassedCapacity * 100 / float64(job.TotalCapacity))
-			////db.DbAdapter.UpdateJob(job)
-			//speed:= float64(currPartSize)/float64(time.Now().Sub(start_time).Seconds()) // B/nano-seconds
-			////speed:= float64(job.PassedCapacity)/float64(time.Now().Sub(start_time).Seconds())
-			////speed:= speed_nano*(10^9)
-			//if job.Avg<speed {
-			//	job.Avg=speed
-			//} else {
-			//	//	if speed < 0.1*job.Avg{
-			//	//	job.Avg=speed
-			//	//}
-			//}
-			////1
-			//job.TimeRequired=3*int64((float64(job.TotalCapacity)*(1-(WT_DELETE/100))-job.PassedCapacity)*100/(WT_UPLOAD*job.Avg))
-			//////job.Progress= job.Progress+float64(WT_DOWLOAD*float64(size/job.TotalCapacity))
-			//db.DbAdapter.UpdateJob(job)
-			//logger.Printf("[INFO] Progress %d%%  Time remain: %d seconds \n", job.Progress, job.TimeRequired)
-
-			//logger.Printf("Download part %d range[%d:%d] successfully.\n", partNumber, offset, end)
+			if job.Msg == "Migration Aborted" {
+				job.TimeRequired = 0
+				job.EndTime = time.Now()
+				job.Status = flowtype.JOB_STATUS_ABORTED
+				db.DbAdapter.UpdateJob(job)
+				break
+				return errors.New(job.Msg)
+			}
 		}
 		if int64(readSize) != currPartSize {
 			logger.Printf("[ERROR] internal error, currPartSize=%d, readSize=%d\n", currPartSize, readSize)
 			return errors.New(DMERR_InternalError)
 		}
-
 		//upload
 		if partNumber == 1 {
 			//init multipart upload
@@ -483,7 +504,6 @@ func MultipartMoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *Locat
 			}
 		}
 		err1 := uploadMover.UploadPart(uploadObjKey, destLoca, currPartSize, buf, partNumber, offset)
-
 		if err1 != nil {
 			err := abortMultipartUpload(obj.ObjectKey, destLoca, uploadMover)
 			if err != nil {
@@ -496,31 +516,28 @@ func MultipartMoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *Locat
 			return errors.New("[ERROR] multipart upload failed")
 		} else {
 			progressTimeCalculation(job, currPartSize, WT_DOWLOAD, start_time)
-			//job.PassedCapacity = job.PassedCapacity + WT_UPLOAD*float64(currPartSize)/100
-			//job.PassedCapacity = math.Round(job.PassedCapacity*100) / 100
-			//job.Progress = int64(job.PassedCapacity * 100 / float64(job.TotalCapacity))
-			//speed:= float64(currPartSize)/float64(time.Now().Sub(start_time).Seconds()) // B/nano-seconds
-			////speed:= speed_nano*(10^9)
-			////speed:= float64(job.PassedCapacity)/float64(time.Now().Sub(start_time).Seconds())
-			//if job.Avg<speed {
-			//	job.Avg=speed
-			//} else {
-			//	//	if speed < 0.1*job.Avg{
-			//	//	job.Avg=speed
-			//	//}
-			//}
-			//job.TimeRequired=3*int64((float64(job.TotalCapacity)*(1-(WT_DELETE/100))-job.PassedCapacity)*100/(WT_UPLOAD*job.Avg))
-			//////job.Progress= job.Progress+float64(WT_DOWLOAD*float64(size/job.TotalCapacity))
-			//db.DbAdapter.UpdateJob(job)
-			//logger.Printf("[INFO] Progress %d%%  Time remain: %d seconds \n", job.Progress, int(job.TimeRequired))
-			//db.DbAdapter.UpdateJob(job)
-			//speed:=gospeed()*1000
-			//time_rem:= (job.TotalCapacity-int64(job.PassedCapacity))*40/(100*int64(speed))
-			//logger.Printf("[INFO] Progress %d%%  Time remain: %d seconds \n", job.Progress, time_rem)
+			if job.Msg == "Migration Aborted" {
+				job.TimeRequired = 0
+				job.EndTime = time.Now()
+				job.Status = flowtype.JOB_STATUS_ABORTED
+				db.DbAdapter.UpdateJob(job)
+				err1 := abortMultipartUpload(obj.ObjectKey, destLoca, uploadMover)
+				if err1 != nil {
+					logger.Printf("[ERROR] abort s3 multipart upload failed, err:%v\n", err1)
+				} else {
+					logger.Printf("[INFO] Abort Multi-Part Upload Successfully")
+					deleteMultipartUpload(obj.ObjectKey, destLoca.VirBucket, destLoca.BakendName, uploadId)
 
+				}
+				break
+				return errors.New(job.Msg)
+			}
 			log.Printf("Upload range [objectkey: %s, partnumber#%d, offset#%d successfully.\n", obj.ObjectKey, partNumber, offset)
 		}
 		//completeParts = append(completeParts, completePart)
+	}
+	if job.Msg == "Migration Aborted" {
+		return errors.New(job.Msg)
 	}
 
 	err = completeMultipartUpload(uploadObjKey, destLoca, uploadMover)
@@ -603,6 +620,14 @@ func move(ctx context.Context, obj *osdss3.Object, capa chan int64, th chan int,
 		needMove = false
 		succeed = false
 	}
+	db.DbAdapter.UpdateJob(job)
+	if job.Msg == "Migration Aborted" {
+		job.Status = flowtype.JOB_STATUS_ABORTED
+		job.TimeRequired = 0
+		job.EndTime = time.Now()
+		db.DbAdapter.UpdateJob(job)
+		return
+	}
 
 	if needMove {
 		//move object
@@ -615,7 +640,14 @@ func move(ctx context.Context, obj *osdss3.Object, capa chan int64, th chan int,
 				logger.Printf("Set PART_SIZE to be %d.\n", PART_SIZE)
 			}
 		}
-
+		db.DbAdapter.UpdateJob(job)
+		if job.Msg == "Migration Aborted" {
+			job.Status = flowtype.JOB_STATUS_ABORTED
+			job.TimeRequired = 0
+			job.EndTime = time.Now()
+			db.DbAdapter.UpdateJob(job)
+			return
+		}
 		if obj.Size <= PART_SIZE {
 			err = MoveObj(obj, newSrcLoca, destLoca, job)
 		} else {
@@ -627,7 +659,6 @@ func move(ctx context.Context, obj *osdss3.Object, capa chan int64, th chan int,
 			succeed = false
 		}
 	}
-
 	//TODO: what if update metadata failed
 	//add object metadata to the destination bucket if destination is not self-defined
 	if succeed && destLoca.VirBucket != "" {
@@ -667,18 +698,14 @@ func move(ctx context.Context, obj *osdss3.Object, capa chan int64, th chan int,
 		capa <- obj.Size
 		logger.Printf(" [INFO]  %v size of migrated object ", obj.Size)
 		progressTimeCalculation(job, obj.Size, WT_DELETE, time.Now())
-		//js.Deleted= js.Deleted+obj.Size
-		//job.PassedCapacity = job.PassedCapacity + WT_DELETE*float64(obj.Size)/100
-		//job.PassedCapacity = math.Round(job.PassedCapacity*100) / 100
-		//job.Progress = int64(job.PassedCapacity * 100 / float64(job.TotalCapacity))
-		////job.Progress= job.Progress+(WT_DELETE*obj.Size/job.TotalCapacity)
-		////speed:=gospeed()*1000
-		////time_rem:= (job.TotalCapacity-int64(job.PassedCapacity))*40/(100*int64(speed))
-		//logger.Printf("[INFO] Progress %d%%  Time remain:  seconds \n", job.Progress)
-		//db.DbAdapter.UpdateJob(job)
+		logger.Printf("[INFO] Progress %d", job.Progress)
 
 	} else {
-		logger.Printf(" [ERROR] migrate object[%s] failed.", obj.ObjectKey)
+		if job.Status != flowtype.JOB_STATUS_ABORTED {
+			logger.Printf(" [ERROR] migrate object[%s] failed.", obj.ObjectKey)
+		} else {
+			logger.Printf(" [INFO] migrate object[%s] aborted.", obj.ObjectKey)
+		}
 		capa <- -1
 	}
 	t := <-th
@@ -712,6 +739,7 @@ func runjob(in *pb.RunJobRequest) error {
 
 	// set context tiemout
 	ctx := context.Background()
+
 	dur := getCtxTimeout()
 	_, ok := ctx.Deadline()
 	if !ok {
@@ -723,7 +751,7 @@ func runjob(in *pb.RunJobRequest) error {
 	j.StartTime = time.Now()
 	j.Status = flowtype.JOB_STATUS_RUNNING
 	updateJob(&j)
-
+	//jobs.Set(in.Id, cancel)
 	// get location information
 	srcLoca, destLoca, err := getLocationInfo(ctx, &j, in)
 	if err != nil {
@@ -851,7 +879,12 @@ func runjob(in *pb.RunJobRequest) error {
 	j.PassedCount = int64(passedCount)
 	if passedCount < totalObjs {
 		errmsg := strconv.FormatInt(totalObjs, 10) + " objects, passed " + strconv.FormatInt(passedCount, 10)
-		logger.Printf("run job failed: %s\n", errmsg)
+		if j.Msg == "Migration Aborted" {
+			logger.Printf("[INFO]: run job aborted: %s\n", errmsg)
+			logger.Printf("Migration aborted successfully")
+		} else {
+			logger.Printf("run job failed: %s\n", errmsg)
+		}
 		ret = errors.New("failed")
 		if j.Msg == "" {
 			if totalObjs > 1 {
@@ -860,8 +893,9 @@ func runjob(in *pb.RunJobRequest) error {
 				j.Msg = "Migration failed: " + strconv.FormatInt(passedCount, 10) + " object migrated out of " + strconv.FormatInt(totalObjs, 10) + " object"
 			}
 		}
-
-		j.Status = flowtype.JOB_STATUS_FAILED
+		if j.Status != flowtype.JOB_STATUS_ABORTED {
+			j.Status = flowtype.JOB_STATUS_FAILED
+		}
 	} else {
 
 		if totalObjs > 1 {
@@ -887,6 +921,7 @@ func runjob(in *pb.RunJobRequest) error {
 	return ret
 }
 func progressTimeCalculation(job *model.Job, size int64, wt float64, start_time time.Time) {
+
 	jobid := fmt.Sprintf("%x", string(job.Id))
 	logfile, err = os.OpenFile(filepath+jobid+".txt", os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
@@ -914,6 +949,7 @@ func progressTimeCalculation(job *model.Job, size int64, wt float64, start_time 
 		PassedCapacity := job.PassedCapacity + float64(size)*(wt/100)
 		job.PassedCapacity = math.Round(PassedCapacity*100) / 100
 		job.Progress = int64(job.PassedCapacity * 100 / float64(job.TotalCapacity))
+		logger.Printf("[INFO] Progress %d", job.Progress)
 		db.DbAdapter.UpdateJob(job)
 	}
 	defer logfile.Close()

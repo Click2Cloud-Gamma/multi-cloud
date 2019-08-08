@@ -444,6 +444,33 @@ func (b *dataflowService) RunPlan(ctx context.Context, in *pb.RunPlanRequest, ou
 
 	return err
 }
+func (b *dataflowService) CancelJob(ctx context.Context, in *pb.CancelJobRequest, out *pb.CancelJobResponse) error {
+	log.Log("Cancel job is called in dataflow service.")
+	actx := c.NewContextFromJson(in.GetContext())
+	if in.Id == "" {
+		errmsg := fmt.Sprint("No id specified.")
+		out.Err = errmsg
+		return errors.New(errmsg)
+	}
+	jb, err := job.Cancel(actx, in.Id)
+	if err != nil {
+		log.Logf("Cancel job err:%d.", err)
+		out.Err = err.Error()
+		return err
+	} else {
+		out.Job = &pb.Job{Id: string(jb.Id.Hex()), Type: jb.Type, PlanName: jb.PlanName, PlanId: jb.PlanId,
+			Description: "for test", SourceLocation: jb.SourceLocation, DestLocation: jb.DestLocation,
+			CreateTime: jb.CreateTime.Unix(), EndTime: jb.EndTime.Unix(), Status: jb.Status, TotalCapacity: jb.TotalCapacity,
+			PassedCapacity: jb.PassedCapacity, TotalCount: jb.TotalCount, PassedCount: jb.PassedCount, Progress: (jb.Progress), TimeRequired: jb.TimeRequired, Msg: jb.Msg}
+	}
+	jsons, errs := json.Marshal(out)
+	if errs != nil {
+		log.Logf(errs.Error())
+	} else {
+		log.Logf("jsons1: %s.\n", jsons)
+	}
+	return err
+}
 
 func (b *dataflowService) GetJob(ctx context.Context, in *pb.GetJobRequest, out *pb.GetJobResponse) error {
 	log.Log("Get job is called in dataflow service.")

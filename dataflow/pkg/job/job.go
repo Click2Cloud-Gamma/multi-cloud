@@ -33,3 +33,8 @@ func Get(ctx *context.Context, id string) (*Job, error) {
 func List(ctx *context.Context, limit int, offset int, filter interface{}) ([]Job, error) {
 	return db.DbAdapter.ListJob(ctx, limit, offset, filter)
 }
+
+func Cancel(ctx *context.Context, id string) (*Job, error) {
+	log.Logf("cancel job %s", id)
+	return db.DbAdapter.CancelJob(ctx, id)
+}

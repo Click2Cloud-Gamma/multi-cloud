@@ -655,6 +655,74 @@ func (ad *adapter) GetJob(ctx *Context, id string) (*Job, error) {
 	}
 	return &job, nil
 }
+func (ad *adapter) CancelJob(ctx *Context, id string) (*Job, error) {
+	job := Job{}
+	ss := ad.s.Copy()
+	defer ss.Close()
+	c := ss.DB(DataBaseName).C(CollJob)
+
+	err := c.Find(bson.M{"_id": bson.ObjectIdHex(id), "tenant": ctx.TenantId}).One(&job)
+	if err == mgo.ErrNotFound {
+		log.Log("Job does not exist.")
+		return nil, ERR_JOB_NOT_EXIST
+	}
+	if job.Msg == "" {
+		job.Msg = "Migration Aborted"
+	} else {
+		return nil, ERR_JOB_COMPLETED
+	}
+	j := Job{}
+	err = c.Find(bson.M{"_id": job.Id}).One(&j)
+	if err != nil {
+		log.Logf("Get job[id:%v] failed before update it, err:%v\n", job.Id, err)
+
+		return nil, errors.New("Get job failed before update it.")
+	}
+
+	if !job.StartTime.IsZero() {
+		j.StartTime = job.StartTime
+	}
+	if !job.EndTime.IsZero() {
+		j.EndTime = job.EndTime
+	}
+	if job.TotalCapacity != 0 {
+		j.TotalCapacity = job.TotalCapacity
+	}
+	if job.TotalCount != 0 {
+		j.TotalCount = job.TotalCount
+	}
+	if job.PassedCount != 0 {
+		j.PassedCount = job.PassedCount
+	}
+	if job.PassedCapacity != 0 {
+		j.PassedCapacity = job.PassedCapacity
+	}
+	if job.Status != "" {
+		j.Status = job.Status
+	}
+	if job.Progress != 0 {
+		j.Progress = job.Progress
+	}
+	if job.TimeRequired != 0 {
+		j.TimeRequired = job.TimeRequired
+	}
+	if job.TimeRequired == 0 {
+		j.TimeRequired = 0
+	}
+	if job.Msg != "" {
+		j.Msg = job.Msg
+	}
+	err = c.Update(bson.M{"_id": j.Id}, &j)
+	if err != nil {
+		log.Logf("Update job in database failed, err:%v\n", err)
+		return nil, errors.New("Update job in database failed.")
+	}
+
+	log.Log("Update job in database succeed.")
+	return &j, nil
+
+	//var query mgo.Query;
+}
 
 func (ad *adapter) ListJob(ctx *Context, limit int, offset int, filter interface{}) ([]Job, error) {
 	//var query mgo.Query;

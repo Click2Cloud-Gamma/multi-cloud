@@ -42,7 +42,7 @@ rm -rf /root/gopath/src/github.com/opensds/multi-cloud
 ### Clone OpenSDS Multi-Cloud branch from Click2Cloud
 ```cassandraql
 mkdir -p /root/gopath/src/github.com/opensds
-git clone -b cloud_brain_features_v1  https://github.com/Click2Cloud/multi-cloud-pv.git
+git clone -b cloud_brain_features_v2  https://github.com/Click2Cloud/multi-cloud-pv.git
 #Old Stable branch: cloud_brain_features
 ```
 * Enter Username: Click2Cloud-Gamma
@@ -219,8 +219,22 @@ Alibaba: "aws-s3"
 
 ###### Response Body
 
-```cassandraql
-"2019/07/24 18:49:41 Migration Started. \n2019/07/24 18:49:41  [INFO] Begin to move obj(key:pycharm-professional-2018.2.exe)\n2019/07/24 18:49:41 [INFO] Move object[pycharm-professional-2018.2.exe] from  bucket #opensdsc2c# to bucket #test-abhi#, size is 253946928.\n2019/07/24 18:50:19 [INFO] Progress 2% \n2019/07/24 18:51:43 [INFO] Progress 5% \n2019/07/24 18:51:47 [INFO] Progress 8% \n2019/07/24 18:52:55 [INFO] Progress 11% \n2019/07/24 18:53:14 [INFO] Progress 14% \n2019/07/24 18:54:17 [INFO] Progress 17% \n2019/07/24 18:54:24 [INFO] Progress 20% \n2019/07/24 18:55:30 [INFO] Progress 23% \n2019/07/24 18:55:35 [INFO] Progress 26% \n2019/07/24 18:56:36 [INFO] Progress 29% \n2019/07/24 18:57:55 [INFO] Progress 32% \n2019/07/24 18:58:01 [INFO] Progress 35% \n2019/07/24 18:58:53 [INFO] Progress 38% \n2019/07/24 18:58:59 [INFO] Progress 41% \n2019/07/24 18:59:04 [INFO] Progress 44% \n2019/07/24 18:59:10 [INFO] Progress 47% \n2019/07/24 18:59:24 [INFO] Progress 50% \n2019/07/24 18:59:38 [INFO] Progress 53% \n2019/07/24 18:59:54 [INFO] Progress 56% \n2019/07/24 18:59:58 [INFO] Progress 59% \n2019/07/24 19:00:11 [INFO] Progress 62% \n2019/07/24 19:00:16 [INFO] Progress 65% \n2019/07/24 19:00:23 [INFO] Progress 68% \n2019/07/24 19:00:32 [INFO] Progress 71% \n2019/07/24 19:00:45 [INFO] Progress 74% \n2019/07/24 19:00:48 [INFO] Progress 77% \n2019/07/24 19:01:07 [INFO] Progress 80% \n2019/07/24 19:01:13 [INFO] Progress 83% \n2019/07/24 19:02:02 [INFO] Progress 86% \n2019/07/24 19:02:08 [INFO] Progress 89% \n2019/07/24 19:02:11 [INFO] Progress 89% \n2019/07/24 19:02:13 [INFO] Progress 90% \n2019/07/24 19:02:14  [INFO] migrate object[pycharm-professional-2018.2.exe] succeed.\n2019/07/24 19:02:14  [INFO] migrate object size [253946928] succeed.\n2019/07/24 19:02:14 [INFO] Progress 100% \n2019/07/24 19:02:14 [INFO] capacity:253946928,TotalCapacity:253946928 Progress:100\n"
+```json
+{
+    "logs": "2019/08/08 13:15:32 Migration Started. \n2019/08/08 13:15:32  [INFO] Begin to move obj :aws/InventoryResults-02-27-2019-15h51m56s.xlsx \n2019/08/08 13:15:32  [INFO] Begin to move obj :aws/j2sdk-1_4_1-linux-i586.bin \n2019/08/08 13:15:32  [INFO] Begin to move obj :aws/mysql-installer-web-community-8.0.12.0.msi \n2019/08/08 13:15:32  [INFO] Begin to move obj :aws/nomachine_6.3.6_1.exe \n2019/08/08 13:15:32 [INFO] Move object[aws/j2sdk-1_4_1-linux-i586.bin] from  bucket 'opensds-test-1' to bucket 'test-abhi', size is 42114758.\n2019/08/08 13:15:32 [INFO] Move object[aws/mysql-installer-web-community-8.0.12.0.msi] from bucket 'opensds-test-1' to bucket 'test-abhi', size is 16625664.\n2019/08/08 13:15:32 [INFO] Move object[aws/InventoryResults-02-27-2019-15h51m56s.xlsx] from bucket 'opensds-test-1' to bucket 'test-abhi', size is 12355.\n2019/08/08 13:15:32 [INFO] Move object[aws/nomachine_6.3.6_1.exe] from  bucket 'opensds-test-1' to bucket 'test-abhi', size is 32693704.\n2019/08/08 13:15:33 [INFO] Progress 0  Time-required = 45891 seconds\n2019/08/08 13:15:33 Download object[aws/InventoryResults-02-27-2019-15h51m56s.xlsx] succeed, size=12355\n2019/08/08 13:15:34 [INFO] Progress 0  Time-required = 45888 seconds\n2019/08/08 13:15:34  [INFO] aws/InventoryResults-02-27-2019-15h51m56s.xlsx object migrated successfully.\n2019/08/08 13:15:34  [INFO]  12355 size of migrated object \n2019/08/08 13:15:34 [INFO] Passed capacity:12355,TotalCapacity:91446481 Progress:0\n2019/08/08 13:15:34 [INFO] Progress 0\n2019/08/08 13:15:34 [INFO] Progress 0\n2019/08/08 13:15:45 [INFO] Progress 8  Time-required = 426 seconds\n2019/08/08 13:15:48 [INFO] Progress 17  Time-required = 384 seconds\n2019/08/08 13:15:48  [INFO] migrate object[aws/j2sdk-1_4_1-linux-i586.bin] aborted.\n2019/08/08 13:15:48 [INFO] Passed capacity:12355,TotalCapacity:91446481 Progress:17\n2019/08/08 13:15:50 [INFO] Progress 26  Time-required = 342 seconds\n2019/08/08 13:15:50 [INFO] Abort Multi-Part Upload Successfully\n2019/08/08 13:15:50  [INFO] migrate object[aws/nomachine_6.3.6_1.exe] aborted.\n2019/08/08 13:15:50 [INFO] Passed capacity:12355,TotalCapacity:91446481 Progress:26\n2019/08/08 13:16:08 [INFO] Progress 35  Time-required = 303 seconds\n2019/08/08 13:16:08  [INFO] migrate object[aws/mysql-installer-web-community-8.0.12.0.msi] aborted.\n2019/08/08 13:16:08 [INFO] Passed capacity:12355,TotalCapacity:91446481 Progress:35\n2019/08/08 13:16:08 run job aborted: 4 objects, passed 1\n2019/08/08 13:16:08 Migration aborted successfully\n"
+}
+```
+
+##### To cancel any specific Job
+* POST method: http://{{ 127.0.0.1 }}:8089/v1/adminTenantId/jobs/{{ JOB-ID }}/abort
+
+###### Response Body
+```json
+{
+    "status": "aborted",
+    "total_objects": 4,
+    "objects_migrated": 1
+}
 ```
 
 References for API:

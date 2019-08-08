@@ -22,6 +22,7 @@
   "plan:run": "",
   "job:list": "",
   "job:get": "",
+  "job:cancel": "",
   "bucket:delete": "",
   "bucket:list": "",
   "bucket:get": "",

@@ -111,6 +111,11 @@ func (ad *adapter) UpdateJob(job *Job) error {
 	}
 	if job.Msg != "" {
 		j.Msg = job.Msg
+	} else {
+		job.Msg = j.Msg
+	}
+	if j.Msg != "" {
+		job.Msg = j.Msg
 	}
 	err = c.Update(bson.M{"_id": j.Id}, &j)
 	if err != nil {

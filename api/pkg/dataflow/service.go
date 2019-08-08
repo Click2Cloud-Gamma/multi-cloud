@@ -16,13 +16,12 @@ package dataflow
 
 import (
 	"encoding/json"
-	"io/ioutil"
-	"net/http"
-
 	"github.com/emicklei/go-restful"
 	"github.com/micro/go-log"
 	"github.com/micro/go-micro/client"
 	"golang.org/x/net/context"
+	"io/ioutil"
+	"net/http"
 
 	"github.com/opensds/multi-cloud/api/pkg/common"
 	c "github.com/opensds/multi-cloud/api/pkg/filters/context"
@@ -388,6 +387,45 @@ func (s *APIService) RunPlan(request *restful.Request, response *restful.Respons
 	response.WriteEntity(res)
 }
 
+type abortjobresp struct {
+	Status         string `json:"status,omitempty"`
+	TotalObjects   int64  `json:"total_objects,omitempty"`
+	ObjectMigrated int64  `json:"objects_migrated,omitempty"`
+}
+type errmsg struct {
+	Error string `json:"error,omitempty"`
+}
+
+func (s *APIService) CancelJob(request *restful.Request, response *restful.Response) {
+	if !policy.Authorize(request, response, "plan:run") {
+		return
+	}
+	actx := request.Attribute(c.KContext).(*c.Context)
+	id := request.PathParameter("id")
+	log.Logf("Received request jobs [id=%s] details.\n", id)
+	ctx := context.Background()
+	res, err := s.dataflowClient.CancelJob(ctx, &dataflow.CancelJobRequest{Context: actx.ToJson(), Id: id})
+	var resp = &abortjobresp{}
+	if err != nil {
+		response.WriteEntity(errmsg{err.Error()})
+		return
+	} else {
+
+		resp = &abortjobresp{"aborted", res.GetJob().TotalCount, res.GetJob().PassedCount}
+	}
+	//For debug -- begin
+	log.Logf("Abort jobs reponse:%v\n", res)
+	jsons, errs := json.Marshal(resp)
+	if errs != nil {
+		log.Logf(errs.Error())
+	} else {
+		log.Logf("res: %s.\n", jsons)
+	}
+	//For debug -- end
+
+	log.Log("Abort job successfully.")
+	response.WriteEntity(resp)
+}
 func (s *APIService) GetJob(request *restful.Request, response *restful.Response) {
 	if !policy.Authorize(request, response, "job:get") {
 		return
@@ -476,39 +514,24 @@ func (s *APIService) ListJob(request *restful.Request, response *restful.Respons
 	response.WriteEntity(res)
 }
 
-type response2 struct {
-	data string `json:"data"`
+type logsresp struct {
+	Logs string `json:"logs,omitempty"`
 }
 
 func (s *APIService) GetJoblogs(request *restful.Request, response *restful.Response) {
-	if !policy.Authorize(request, response, "job:get") {
+	if !policy.Authorize(request, response, "plan:run") {
 		return
 	}
-
 	id := request.PathParameter("id")
-	var filepath = "/opt/"
+	var filepath = "E:/"
 	filename := filepath + id + ".txt"
 	log.Logf("Received request jobs [id=%s] details.\n", filename)
 	res, err := ioutil.ReadFile(filename)
-
+	str := string(res)
 	if err != nil {
-		jsons, _ := json.Marshal("open " + filename + ": The system cannot find the file specified.")
-		response.ResponseWriter.Write(jsons)
+		response.WriteAsJson(err)
 		return
 	}
-	var obj interface{}
-	str := string(res)
-	//For debug -- begin
-	log.Logf("Get jobs reponse:%v\n", res)
-	jsons, errs := json.Marshal(str)
-	if errs != nil {
-		log.Logf(errs.Error())
-	} else {
-		log.Logf("res: %s.\n", jsons)
-	}
-	//For debug -- end
-	json.Unmarshal(jsons, &obj)
-
-	log.Log("Get job details successfully.")
-	response.ResponseWriter.Write(jsons)
+	resp := logsresp{str}
+	response.WriteEntity(resp)
 }
