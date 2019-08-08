@@ -523,7 +523,7 @@ func (s *APIService) GetJoblogs(request *restful.Request, response *restful.Resp
 		return
 	}
 	id := request.PathParameter("id")
-	var filepath = "E:/"
+	var filepath = "/opt/"
 	filename := filepath + id + ".txt"
 	log.Logf("Received request jobs [id=%s] details.\n", filename)
 	res, err := ioutil.ReadFile(filename)
