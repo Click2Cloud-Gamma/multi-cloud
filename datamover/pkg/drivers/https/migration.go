@@ -854,6 +854,9 @@ func runjob(in *pb.RunJobRequest) error {
 						j.Progress = int64(capacity * 100 / j.TotalCapacity)
 					}
 					logger.Printf("[INFO] Passed capacity:%d,TotalCapacity:%d Progress:%d\n", capacity, j.TotalCapacity, j.Progress)
+					if capacity ==j.TotalCapacity{
+						logger.Printf("[INFO] Migration Completed Successfully.")
+					}
 					db.DbAdapter.UpdateJob(&j)
 				}
 			}
