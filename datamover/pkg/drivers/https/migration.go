@@ -854,9 +854,6 @@ func runjob(in *pb.RunJobRequest) error {
 						j.Progress = int64(capacity * 100 / j.TotalCapacity)
 					}
 					logger.Printf("[INFO] Passed capacity:%d,TotalCapacity:%d Progress:%d\n", capacity, j.TotalCapacity, j.Progress)
-					if capacity ==j.TotalCapacity{
-						logger.Printf("[INFO] Migration Completed Successfully.")
-					}
 					db.DbAdapter.UpdateJob(&j)
 				}
 			}
@@ -880,10 +877,10 @@ func runjob(in *pb.RunJobRequest) error {
 	if passedCount < totalObjs {
 		errmsg := strconv.FormatInt(totalObjs, 10) + " objects, passed " + strconv.FormatInt(passedCount, 10)
 		if j.Msg == "Migration Aborted" {
-			logger.Printf("[INFO]: run job aborted: %s\n", errmsg)
+			logger.Printf("[INFO] run job aborted: %s\n", errmsg)
 			logger.Printf("Migration aborted successfully")
 		} else {
-			logger.Printf("run job failed: %s\n", errmsg)
+			logger.Printf("[ERROR] run job failed: %s\n", errmsg)
 		}
 		ret = errors.New("failed")
 		if j.Msg == "" {
@@ -950,6 +947,9 @@ func progressTimeCalculation(job *model.Job, size int64, wt float64, start_time 
 		job.PassedCapacity = math.Round(PassedCapacity*100) / 100
 		job.Progress = int64(job.PassedCapacity * 100 / float64(job.TotalCapacity))
 		logger.Printf("[INFO] Progress %d", job.Progress)
+		if job.PassedCapacity==float64(job.TotalCapacity){
+			logger.Printf("Migration Completed Successfully.")
+		}
 		db.DbAdapter.UpdateJob(job)
 	}
 	defer logfile.Close()
