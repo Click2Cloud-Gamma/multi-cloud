@@ -853,7 +853,7 @@ func runjob(in *pb.RunJobRequest) error {
 						j.TimeRequired = int64(0)
 						j.Progress = int64(capacity * 100 / j.TotalCapacity)
 					}
-					logger.Printf("[INFO] Passed capacity:%d,TotalCapacity:%d Progress:%d\n", capacity, j.TotalCapacity, j.Progress)
+					log.Printf("[INFO] Passed capacity:%d,TotalCapacity:%d Progress:%d\n", capacity, j.TotalCapacity, j.Progress)
 					db.DbAdapter.UpdateJob(&j)
 				}
 			}
@@ -902,6 +902,7 @@ func runjob(in *pb.RunJobRequest) error {
 		}
 		j.TimeRequired = int64(0)
 		j.Status = flowtype.JOB_STATUS_SUCCEED
+		logger.Printf("Migration Completed Successfully.")
 	}
 
 	j.EndTime = time.Now()
@@ -947,9 +948,7 @@ func progressTimeCalculation(job *model.Job, size int64, wt float64, start_time 
 		job.PassedCapacity = math.Round(PassedCapacity*100) / 100
 		job.Progress = int64(job.PassedCapacity * 100 / float64(job.TotalCapacity))
 		logger.Printf("[INFO] Progress %d", job.Progress)
-		if job.PassedCapacity==float64(job.TotalCapacity){
-			logger.Printf("Migration Completed Successfully.")
-		}
+
 		db.DbAdapter.UpdateJob(job)
 	}
 	defer logfile.Close()
