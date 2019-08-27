@@ -24,13 +24,13 @@ import (
 	"github.com/opensds/multi-cloud/backend/proto"
 	"github.com/opensds/multi-cloud/dataflow/pkg/model"
 	flowtype "github.com/opensds/multi-cloud/dataflow/pkg/model"
-	"github.com/opensds/multi-cloud/datamover/pkg/amazon/s3"
-	"github.com/opensds/multi-cloud/datamover/pkg/azure/blob"
-	"github.com/opensds/multi-cloud/datamover/pkg/ceph/s3"
+	s3mover "github.com/opensds/multi-cloud/datamover/pkg/amazon/s3"
+	blobmover "github.com/opensds/multi-cloud/datamover/pkg/azure/blob"
+	cephs3mover "github.com/opensds/multi-cloud/datamover/pkg/ceph/s3"
 	"github.com/opensds/multi-cloud/datamover/pkg/db"
 	"github.com/opensds/multi-cloud/datamover/pkg/gcp/s3"
 	"github.com/opensds/multi-cloud/datamover/pkg/hw/obs"
-	"github.com/opensds/multi-cloud/datamover/pkg/ibm/cos"
+	ibmcosmover "github.com/opensds/multi-cloud/datamover/pkg/ibm/cos"
 	. "github.com/opensds/multi-cloud/datamover/pkg/utils"
 	pb "github.com/opensds/multi-cloud/datamover/proto"
 	s3utils "github.com/opensds/multi-cloud/s3/pkg/utils"
@@ -935,12 +935,10 @@ func progressTimeCalculation(job *model.Job, size int64, wt float64, start_time 
 		speed := float64(size) / float64(time.Now().Sub(start_time).Seconds())
 		if job.Avg < speed {
 			job.Avg = speed
-		} //else {	if speed < 0.1*job.Avg{
-		//	job.Avg=speed
-		//}
+		}
+
 		job.TimeRequired = 3 * int64((float64(job.TotalCapacity)*(1-(WT_DELETE/100))-job.PassedCapacity)*100/(WT_UPLOAD*job.Avg))
 		job.Progress = int64(job.PassedCapacity * 100 / float64(job.TotalCapacity))
-		//job.Progress= job.Progress+float64(WT_DOWLOAD*float64(size/job.TotalCapacity))
 		logger.Printf("[INFO] Progress %d  Time-required = %d seconds", job.Progress, int64(job.TimeRequired))
 		db.DbAdapter.UpdateJob(job)
 	} else {
@@ -948,7 +946,6 @@ func progressTimeCalculation(job *model.Job, size int64, wt float64, start_time 
 		job.PassedCapacity = math.Round(PassedCapacity*100) / 100
 		job.Progress = int64(job.PassedCapacity * 100 / float64(job.TotalCapacity))
 		logger.Printf("[INFO] Progress %d", job.Progress)
-
 		db.DbAdapter.UpdateJob(job)
 	}
 	defer logfile.Close()
