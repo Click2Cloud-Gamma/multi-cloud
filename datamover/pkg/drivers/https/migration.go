@@ -468,7 +468,7 @@ func MultipartMoveObj(obj *osdss3.Object, srcLoca *LocationInfo, destLoca *Locat
 		logger.Printf("job cleaned %v", abort)
 		if !abort {
 			abort = true
-			logger.Printf("job cleaned  started %v", abort)
+			logger.Printf("multi-part cleaning started %v", abort)
 			//if uploadId != "" {
 			logger.Printf("job aborting started")
 			err := abortMultipartUpload(obj.ObjectKey, destLoca, uploadMover)
@@ -807,6 +807,7 @@ func runjob(in *pb.RunJobRequest, jobFSM *JobFSM) error {
 			logger.Printf("update the finish status of job in database failed three times, no need to try more.")
 		}
 	}
+	delete(jobstate, in.Id) // Deleting Job ID from the jobstate (map[string]string
 
 	return ret
 }
@@ -859,15 +860,3 @@ func NewJobFSM(to string) *JobFSM {
 func (d *JobFSM) enterState(e *fsm.Event) {
 	logger.Printf("The job %s is %s\n", d.To, e.Dst)
 }
-
-//func changestate (jobFSM *JobFSM, state string){
-//	if jobFSM.FSM.Is(state)== false {
-//
-//		//do nothing
-//	} else {
-//
-//
-//		}
-//	//}
-//}
-//func newJobFSM

@@ -42,14 +42,8 @@ func List(ctx *context.Context, limit int, offset int, filter interface{}) ([]Jo
 func AbortJob(ctx *context.Context, id string) error {
 
 	req := datamover.AbortJobRequest{Id: id}
-	//data, err := json.Marshal(req)
-	//if err != nil {
-	//	log.Logf("Marshal run job request failed, err:%v\n", data)
-	//	return err
-	//}
 	go sendabortJob(&req)
 	return nil
-	//return kafka.ProduceMsg(abortMigration, data)
 }
 func sendabortJob(req *datamover.AbortJobRequest) error {
 	data, err := json.Marshal(*req)
