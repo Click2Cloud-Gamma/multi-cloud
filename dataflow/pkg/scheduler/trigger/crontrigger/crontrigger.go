@@ -17,10 +17,10 @@ package crontrigger
 import (
 	"fmt"
 
-	log "github.com/sirupsen/logrus"
 	"github.com/opensds/multi-cloud/dataflow/pkg/model"
 	"github.com/opensds/multi-cloud/dataflow/pkg/scheduler/trigger"
 	"github.com/robfig/cron"
+	log "github.com/sirupsen/logrus"
 )
 
 type CronTrigger struct {
@@ -37,7 +37,7 @@ func init() {
 func (c *CronTrigger) Add(planId, properties string, executer trigger.Executer) error {
 	cn := cron.New()
 	c.plans[planId] = cn
-	if err := cn.AddFunc(properties, executer.Run); err != nil {
+	if _, err := cn.AddFunc(properties, executer.Run); err != nil {
 		log.Errorf("Add plan(%s) to  corn trigger failed: %v", planId, err)
 		return fmt.Errorf("Add plan(%s) to corn trigger failed: %v", planId, err)
 	}

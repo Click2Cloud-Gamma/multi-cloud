@@ -20,7 +20,6 @@ import (
 	"os"
 	"strconv"
 
-	log "github.com/sirupsen/logrus"
 	"github.com/micro/go-micro/metadata"
 	"github.com/opensds/multi-cloud/api/pkg/common"
 	"github.com/opensds/multi-cloud/dataflow/pkg/db"
@@ -29,6 +28,7 @@ import (
 	"github.com/opensds/multi-cloud/dataflow/pkg/scheduler/lifecycle"
 	"github.com/opensds/multi-cloud/dataflow/pkg/scheduler/trigger"
 	"github.com/robfig/cron"
+	log "github.com/sirupsen/logrus"
 )
 
 func LoadAllPlans() {
@@ -76,7 +76,7 @@ func LoadLifecycleScheduler() error {
 	//TODO: Check the validation of spec
 	cn := cron.New()
 	//0 */10 * * * ?
-	if err := cn.AddFunc(spec, lifecycle.ScheduleLifecycle); err != nil {
+	if _, err := cn.AddFunc(spec, lifecycle.ScheduleLifecycle); err != nil {
 		log.Errorf("add lifecyecle scheduler to cron trigger failed: %v.\n", err)
 		return fmt.Errorf("add lifecyecle scheduler to cron trigger failed: %v", err)
 	}
