@@ -1,5 +1,5 @@
 # Integration of Alibaba Cloud in OpenSDS/Multi-cloud
-**Author(s)**:  [Click2Cloud Technology Services India Pvt. Ltd.](https://github.com/Click2Cloud)
+**Author(s)**:  [Click2Cloud Technology Services India Pvt. Ltd.](https://www.click2cloud.com/)
 ### Introduction
 Currently there is no object management mechanism for Alibaba Cloud in multi-cloud.By adding support of Alibaba OSS service will provide object management mechanism for Alibaba Cloud.
 
