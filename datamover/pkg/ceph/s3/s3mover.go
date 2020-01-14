@@ -16,110 +16,129 @@ package cephs3mover
 
 import (
 	"bytes"
-	"crypto/md5"
-	"encoding/base64"
 	"errors"
-	"io/ioutil"
-	"strconv"
-
-	log "github.com/sirupsen/logrus"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	. "github.com/opensds/multi-cloud/datamover/pkg/utils"
 	pb "github.com/opensds/multi-cloud/datamover/proto"
-	. "github.com/webrtcn/s3client"
-	"github.com/webrtcn/s3client/models"
+	log "github.com/sirupsen/logrus"
+	"strconv"
 )
 
-type CreateMultipartUploadOutput struct {
-	UploadID string
-}
-
 type CephS3Mover struct {
-	downloader         *Client                      //for multipart download
-	svc                *Uploads                     //for multipart upload
-	multiUploadInitOut *CreateMultipartUploadOutput //for multipart upload
-	completeParts      []*CompletePart              //for multipart upload
+	downloader         *s3manager.Downloader           //for multipart download
+	svc                *s3.S3                          //for multipart upload
+	multiUploadInitOut *s3.CreateMultipartUploadOutput //for multipart upload
+	//uploadId string //for multipart upload
+	completeParts []*s3.CompletedPart //for multipart upload
+}
+type s3Cred struct {
+	ak string
+	sk string
 }
 
-func md5Content(data []byte) string {
-	md5Ctx := md5.New()
-	md5Ctx.Write(data)
-	cipherStr := md5Ctx.Sum(nil)
-	value := base64.StdEncoding.EncodeToString(cipherStr)
-	return value
+func (myc *s3Cred) Retrieve() (credentials.Value, error) {
+	cred := credentials.Value{AccessKeyID: myc.ak, SecretAccessKey: myc.sk}
+	return cred, nil
 }
 
+func (myc *s3Cred) IsExpired() bool {
+	return false
+}
 func handleCephS3Errors(err error) error {
 	if err != nil {
-		switch err.Error() {
-		case "SignatureDoesNotMatch":
-			log.Info("ceph s3 error: permission denied.")
-			return errors.New(DMERR_NoPermission)
-		default:
-			return err
+		if serr, ok := err.(awserr.Error); ok { // This error is a Service-specific
+			switch serr.Code() { // Compare serviceCode to ServiceCodeXxx constants
+			case "InvalidAccessKeyId":
+				log.Info("ceph s3 error: permission denied.")
+				return errors.New(DMERR_NoPermission)
+			case "NoSuchUpload":
+				return errors.New(DMERR_NoSuchUpload)
+			default:
+				return err
+			}
 		}
+		return err
 	}
-
 	return nil
 }
-
 func (mover *CephS3Mover) UploadObj(objKey string, destLoca *LocationInfo, buf []byte) error {
 	log.Infof("[cephs3mover] UploadObj object, key:%s.", objKey)
-	sess := NewClient(destLoca.EndPoint, destLoca.Access, destLoca.Security)
-	bucket := sess.NewBucket()
-	cephObject := bucket.NewObject(destLoca.BucketName)
-	contentMD5 := md5Content(buf)
-	length := int64(len(buf))
-	body := ioutil.NopCloser(bytes.NewReader(buf))
+	s3c := s3Cred{ak: destLoca.Access, sk: destLoca.Security}
+	creds := credentials.NewCredentials(&s3c)
+	sess, err := session.NewSession(&aws.Config{
+		Region:      aws.String(destLoca.Region),
+		Endpoint:    aws.String(destLoca.EndPoint),
+		Credentials: creds,
+	})
+	if err != nil {
+		log.Errorf("[ceohs3mover] New session failed, err:%v\n", err)
+		return handleCephS3Errors(err)
+	}
+	reader := bytes.NewReader(buf)
+	uploader := s3manager.NewUploader(sess)
 	log.Infof("[cephs3mover] Try to upload, bucket:%s,obj:%s\n", destLoca.BucketName, objKey)
+	input := s3manager.UploadInput{
+		Bucket: aws.String(destLoca.BucketName),
+		Key:    aws.String(objKey),
+		Body:   reader,
+	}
+	if destLoca.ClassName != "" {
+		input.StorageClass = aws.String(destLoca.ClassName)
+	}
 	for tries := 1; tries <= 3; tries++ {
-		err := cephObject.Create(objKey, contentMD5, "", length, body, models.Private)
+		_, err = uploader.Upload(&input)
 		if err != nil {
-			log.Errorf("[cephs3mover] upload object[bucket:%s,key:%s] failed %d times, err:%v\n",
-				destLoca.BucketName, objKey, tries, err)
+			log.Errorf("[cephs3mover] Upload object[%s] failed %d times, err:%v\n", objKey, tries, err)
 			e := handleCephS3Errors(err)
 			if tries >= 3 || e.Error() == DMERR_NoPermission { //If no permission, then no need to retry.
 				return e
 			}
 		} else {
-			log.Infof("[cephs3mover] Upload object[bucket:%s,key:%s] successfully.", destLoca.BucketName, objKey)
+			log.Infof("[cephs3mover] Upload object[%s] successfully.", objKey)
 			return nil
 		}
-
 	}
-	log.Infof("[cephs3mover] upload object, bucket:%s,obj:%s, should not be here.\n", destLoca.BucketName, objKey)
+
+	log.Infof("[cephs3mover] Upload object, bucket:%s,obj:%s, should not be here.\n", destLoca.BucketName, objKey)
 	return errors.New(DMERR_InternalError)
 }
-
 func (mover *CephS3Mover) DownloadObj(objKey string, srcLoca *LocationInfo, buf []byte) (size int64, err error) {
-	log.Infof("[cephs3mover] DownloadObj object, key:%s.", objKey)
-	sess := NewClient(srcLoca.EndPoint, srcLoca.Access, srcLoca.Security)
-	bucket := sess.NewBucket()
-	cephObject := bucket.NewObject(srcLoca.BucketName)
-	var numBytes int64
+	s3c := s3Cred{ak: srcLoca.Access, sk: srcLoca.Security}
+	creds := credentials.NewCredentials(&s3c)
+	sess, err := session.NewSession(&aws.Config{
+		Region:      aws.String(srcLoca.Region),
+		Endpoint:    aws.String(srcLoca.EndPoint),
+		Credentials: creds,
+	})
+	if err != nil {
+		log.Errorf("[cephs3mover] New session failed, err:%v\n", err)
+		return 0, handleCephS3Errors(err)
+	}
+
+	writer := aws.NewWriteAtBuffer(buf)
+	downLoader := s3manager.NewDownloader(sess)
+	getObjInput := s3.GetObjectInput{
+		Bucket: aws.String(srcLoca.BucketName),
+		Key:    aws.String(objKey),
+	}
 	log.Infof("[cephs3mover] Try to download, bucket:%s,obj:%s\n", srcLoca.BucketName, objKey)
 	for tries := 1; tries <= 3; tries++ {
-		getObject, err := cephObject.Get(objKey, nil)
-		if err != nil {
-			log.Errorf("[cephs3mover]download object[bucket:%s,key:%s] failed: %v.\n", srcLoca.BucketName, objKey, err)
-			e := handleCephS3Errors(err)
-			if tries >= 3 || e.Error() == DMERR_NoPermission { //If no permission, then no need to retry.
-				return 0, e
-			} else {
-				continue
-			}
-		}
-		//defer getObject.Body.Close()
-		d, err := ioutil.ReadAll(getObject.Body)
-		data := []byte(d)
-		size = int64(len(data))
-		copy(buf, data)
+		numBytes, err := downLoader.Download(writer, &getObjInput)
 		if err != nil {
 			log.Errorf("[cephs3mover]download object[bucket:%s,key:%s] failed %d times, err:%v\n",
 				srcLoca.BucketName, objKey, tries, err)
+			e := handleCephS3Errors(err)
+			if tries >= 3 || e.Error() == DMERR_NoPermission { //If no permission, then no need to retry.
+				return 0, e
+			}
 		} else {
-			numBytes = getObject.ContentLength
 			log.Infof("[cephs3mover]download object[bucket:%s,key:%s] succeed, bytes:%d\n", srcLoca.BucketName, objKey, numBytes)
-			return numBytes, err
+			return numBytes, nil
 		}
 	}
 
@@ -128,102 +147,123 @@ func (mover *CephS3Mover) DownloadObj(objKey string, srcLoca *LocationInfo, buf 
 }
 
 func (mover *CephS3Mover) MultiPartDownloadInit(srcLoca *LocationInfo) error {
-	sess := NewClient(srcLoca.EndPoint, srcLoca.Access, srcLoca.Security)
-	mover.downloader = sess
-	log.Infof("[cephs3mover] MultiPartDownloadInit succeed.")
+	s3c := s3Cred{ak: srcLoca.Access, sk: srcLoca.Security}
+	creds := credentials.NewCredentials(&s3c)
+	sess, err := session.NewSession(&aws.Config{
+		Region:      aws.String(srcLoca.Region),
+		Endpoint:    aws.String(srcLoca.EndPoint),
+		Credentials: creds,
+	})
+	if err != nil {
+		log.Errorf("[cephs3mover] new session for multipart download failed, err:%v\n", err)
+		return handleCephS3Errors(err)
+	}
 
+	mover.downloader = s3manager.NewDownloader(sess)
+	log.Infof("[cephs3mover] MultiPartDownloadInit succeed.")
 	return nil
 }
 
 func (mover *CephS3Mover) DownloadRange(objKey string, srcLoca *LocationInfo, buf []byte, start int64, end int64) (size int64, err error) {
 	log.Infof("[cephs3mover] Download object[%s] range[%d - %d]...\n", objKey, start, end)
-	//sess := NewClient(srcLoca.EndPoint, srcLoca.Access, srcLoca.Security)
-	bucket := mover.downloader.NewBucket()
-	cephObject := bucket.NewObject(srcLoca.BucketName)
-	var getObjectOption GetObjectOption
-	rangeObj := Range{Begin: start, End: end}
-	getObjectOption = GetObjectOption{
-		Range: &rangeObj,
+	writer := aws.NewWriteAtBuffer(buf)
+	getObjInput := s3.GetObjectInput{
+		Bucket: aws.String(srcLoca.BucketName),
+		Key:    aws.String(objKey),
 	}
 	strStart := strconv.FormatInt(start, 10)
 	strEnd := strconv.FormatInt(end, 10)
 	rg := "bytes=" + strStart + "-" + strEnd
+	getObjInput.SetRange(rg)
 	log.Infof("[cephs3mover] Try to download object:%s, range:=%s\n", objKey, rg)
 	for tries := 1; tries <= 3; tries++ {
-		resp, err := cephObject.Get(objKey, &getObjectOption)
+		numBytes, err := mover.downloader.Download(writer, &getObjInput)
 		if err != nil {
-			log.Errorf("[cephs3mover] download object[bucket:%s,key:%s] failed: %v.\n",
-				srcLoca.BucketName, objKey, err)
-			e := handleCephS3Errors(err)
-			if tries >= 3 || e.Error() == DMERR_NoPermission {
-				return 0, e
-			} else {
-				continue
-			}
-		}
-		//defer resp.Body.Close()
-		d, err := ioutil.ReadAll(resp.Body)
-		data := []byte(d)
-		size = int64(len(data))
-		copy(buf, data)
-		if err != nil {
-			log.Errorf("[cephs3mover] download object[%s] range[%d - %d] faild %d times, err:%v\n",
+			log.Errorf("[cephs3mover] download object[%s] range[%d - %d] failed %d times, err:%v\n",
 				objKey, start, end, tries, err)
+			e := handleCephS3Errors(err)
+			if tries >= 3 || e.Error() == DMERR_NoPermission { //If no permission, then no need to retry.
+				return 0, e
+			}
 		} else {
-			log.Infof("[cephs3mover] download object[%s] range[%d - %d] succeed, bytes:%d\n", objKey, start, end, size)
-			return size, err
+			log.Infof("[cephs3mover] download object[%s] range[%d - %d] succeed, bytes:%d\n", objKey, start, end, numBytes)
+			return numBytes, nil
 		}
 	}
-
 	log.Infof("[cephs3mover] download object[%s] range[%d - %d], should not be here.\n", objKey, start, end)
 	return 0, errors.New(DMERR_InternalError)
 }
 
 func (mover *CephS3Mover) MultiPartUploadInit(objKey string, destLoca *LocationInfo) (string, error) {
-	sess := NewClient(destLoca.EndPoint, destLoca.Access, destLoca.Security)
-	bucket := sess.NewBucket()
-	cephObject := bucket.NewObject(destLoca.BucketName)
-	mover.svc = cephObject.NewUploads(objKey)
+	s3c := s3Cred{ak: destLoca.Access, sk: destLoca.Security}
+	creds := credentials.NewCredentials(&s3c)
+	sess, err := session.NewSession(&aws.Config{
+		Region:      aws.String(destLoca.Region),
+		Endpoint:    aws.String(destLoca.EndPoint),
+		Credentials: creds,
+	})
+	if err != nil {
+		log.Errorf("[cephs3mover] new session failed, err:%v\n", err)
+		return "", handleCephS3Errors(err)
+	}
+
+	mover.svc = s3.New(sess)
+	multiUpInput := &s3.CreateMultipartUploadInput{
+		Bucket: aws.String(destLoca.BucketName),
+		Key:    aws.String(objKey),
+	}
+	if destLoca.ClassName != "" {
+		multiUpInput.StorageClass = aws.String(destLoca.ClassName)
+	}
 	log.Infof("[cephs3mover] Try to init multipart upload[objkey:%s].\n", objKey)
 	for tries := 1; tries <= 3; tries++ {
-		resp, err := mover.svc.Initiate(nil)
+		resp, err := mover.svc.CreateMultipartUpload(multiUpInput)
 		if err != nil {
 			log.Errorf("[cephs3mover] init multipart upload[objkey:%s] failed %d times, err:%v.\n", objKey, tries, err)
 			e := handleCephS3Errors(err)
-			if tries >= 3 || e.Error() == DMERR_NoPermission {
+			if tries >= 3 || e.Error() == DMERR_NoPermission { //If no permission, then no need to retry.
 				return "", e
 			}
 		} else {
-			mover.multiUploadInitOut = &CreateMultipartUploadOutput{resp.UploadID}
-			log.Infof("[cephs3mover] Init multipart upload[objkey:%s] successfully, UploadId:%s\n", objKey, resp.UploadID)
-			return resp.UploadID, nil
+			mover.multiUploadInitOut = resp
+			log.Infof("[cephs3mover] init multipart upload[objkey:%s] successfully, UploadId:%s\n", objKey, *resp.UploadId)
+			return "", nil
 		}
 	}
-	log.Infof("[cephs3mover] init multipart upload[objkey:%s], should not be here.\n", objKey)
-	return "", errors.New(DMERR_InternalError)
 
+	log.Infof("[cephs3mover] init multipart upload[objkey:%s], should not be here.\n", objKey)
+	return *mover.multiUploadInitOut.UploadId, errors.New(DMERR_InternalError)
 }
 
 func (mover *CephS3Mover) UploadPart(objKey string, destLoca *LocationInfo, upBytes int64, buf []byte, partNumber int64, offset int64) error {
 	log.Infof("[cephs3mover] Upload range[objkey:%s, partnumber#%d,offset#%d,upBytes#%d,uploadid#%s]...\n", objKey, partNumber,
-		offset, upBytes, mover.multiUploadInitOut.UploadID)
+		offset, upBytes, *mover.multiUploadInitOut.UploadId)
 
-	contentMD5 := md5Content(buf)
-	length := int64(len(buf))
-	data := []byte(buf)
-	body := ioutil.NopCloser(bytes.NewReader(data))
+	upPartInput := &s3.UploadPartInput{
+		Body:          bytes.NewReader(buf),
+		Bucket:        aws.String(destLoca.BucketName),
+		Key:           aws.String(objKey),
+		PartNumber:    aws.Int64(partNumber),
+		UploadId:      aws.String(*mover.multiUploadInitOut.UploadId),
+		ContentLength: aws.Int64(upBytes),
+	}
 
+	log.Infof("[cephs3mover] Try to upload range[objkey:%s, partnumber#%d, offset#%d].\n", objKey, partNumber, offset)
 	for tries := 1; tries <= 3; tries++ {
-		upRes, err := mover.svc.UploadPart(int(partNumber), mover.multiUploadInitOut.UploadID, contentMD5, "", length, body)
+		upRes, err := mover.svc.UploadPart(upPartInput)
 		if err != nil {
 			log.Errorf("[cephs3mover] upload range[objkey:%s, partnumber#%d, offset#%d] failed %d times, err:%v\n",
 				objKey, partNumber, offset, tries, err)
 			e := handleCephS3Errors(err)
-			if tries >= 3 || e.Error() == DMERR_NoPermission {
+			if tries >= 3 || e.Error() == DMERR_NoPermission { //If no permission, then no need to retry.
 				return e
 			}
 		} else {
-			mover.completeParts = append(mover.completeParts, upRes)
+			part := s3.CompletedPart{
+				ETag:       upRes.ETag,
+				PartNumber: aws.Int64(partNumber),
+			}
+			mover.completeParts = append(mover.completeParts, &part)
 			log.Infof("[cephs3mover] Upload range[objkey:%s, partnumber#%d,offset#%d] successfully.\n", objKey, partNumber, offset)
 			return nil
 		}
@@ -233,46 +273,49 @@ func (mover *CephS3Mover) UploadPart(objKey string, destLoca *LocationInfo, upBy
 }
 
 func (mover *CephS3Mover) AbortMultipartUpload(objKey string, destLoca *LocationInfo) error {
-	log.Infof("[cephs3mover] Aborting multipart upload[objkey:%s] for uploadId#%s.\n", objKey, mover.multiUploadInitOut.UploadID)
-	bucket := mover.downloader.NewBucket()
-	cephObject := bucket.NewObject(destLoca.BucketName)
-	uploader := cephObject.NewUploads(objKey)
+	log.Infof("[cephs3mover] Abort multipart upload[objkey:%s] for uploadId#%s.\n", objKey, *mover.multiUploadInitOut.UploadId)
+	abortInput := &s3.AbortMultipartUploadInput{
+		Bucket:   aws.String(destLoca.BucketName),
+		Key:      aws.String(objKey),
+		UploadId: aws.String(*mover.multiUploadInitOut.UploadId),
+	}
+
 	for tries := 1; tries <= 3; tries++ {
-		err := uploader.RemoveUploads(mover.multiUploadInitOut.UploadID)
+		_, err := mover.svc.AbortMultipartUpload(abortInput)
 		if err != nil {
-			log.Errorf("[cephs3mover] abort multipart upload[objkey:%s] for uploadId#%s failed %d times.\n",
-				objKey, mover.multiUploadInitOut.UploadID, tries)
+			log.Errorf("[cephs3mover] abort multipart upload[objkey:%s] for uploadId#%s failed %d times, err:%v.\n",
+				objKey, *mover.multiUploadInitOut.UploadId, tries, err)
 			e := handleCephS3Errors(err)
-			if tries >= 3 || e.Error() == DMERR_NoPermission {
+			if tries >= 3 || e.Error() == DMERR_NoPermission { //If no permission, then no need to retry.
 				return e
 			}
 		} else {
-			log.Infof("[cephs3mover] Abort multipart upload[objkey:%s] for uploadId#%s successfully.\n",
-				objKey, mover.multiUploadInitOut.UploadID, tries)
+			log.Infof("[cephs3mover] abort multipart upload[objkey:%s] for uploadId#%s successfully.\n",
+				objKey, *mover.multiUploadInitOut.UploadId, tries)
 			return nil
 		}
 	}
 	log.Infof("[cephs3mover] abort multipart upload[objkey:%s] for uploadId#%s, should not be here.\n",
-		objKey, mover.multiUploadInitOut.UploadID)
+		objKey, *mover.multiUploadInitOut.UploadId)
 	return errors.New(DMERR_InternalError)
 }
 
 func (mover *CephS3Mover) CompleteMultipartUpload(objKey string, destLoca *LocationInfo) error {
-	log.Infof("[cephs3mover] Try to do CompleteMultipartUpload [objkey:%s].\n", objKey)
-	var completeParts []CompletePart
-	for _, p := range mover.completeParts {
-		completePart := CompletePart{
-			Etag:       p.Etag,
-			PartNumber: int(p.PartNumber),
-		}
-		completeParts = append(completeParts, completePart)
+	completeInput := &s3.CompleteMultipartUploadInput{
+		Bucket:   aws.String(destLoca.BucketName),
+		Key:      aws.String(objKey),
+		UploadId: aws.String(*mover.multiUploadInitOut.UploadId),
+		MultipartUpload: &s3.CompletedMultipartUpload{
+			Parts: mover.completeParts,
+		},
 	}
+	log.Infof("[cephs3mover] Try to do CompleteMultipartUpload [objkey:%s].\n", objKey)
 	for tries := 1; tries <= 3; tries++ {
-		rsp, err := mover.svc.Complete(mover.multiUploadInitOut.UploadID, completeParts)
+		rsp, err := mover.svc.CompleteMultipartUpload(completeInput)
 		if err != nil {
 			log.Errorf("[cephs3mover] completeMultipartUpload [objkey:%s] failed %d times, err:%v\n", objKey, tries, err)
 			e := handleCephS3Errors(err)
-			if tries >= 3 || e.Error() == DMERR_NoPermission {
+			if tries >= 3 || e.Error() == DMERR_NoPermission { //If no permission, then no need to retry.
 				return e
 			}
 		} else {
@@ -281,53 +324,83 @@ func (mover *CephS3Mover) CompleteMultipartUpload(objKey string, destLoca *Locat
 		}
 	}
 	log.Infof("[cephs3mover] completeMultipartUpload [objkey:%s], should not be here.\n", objKey)
-	return errors.New("internal error")
+	return errors.New(DMERR_InternalError)
 }
-
 func (mover *CephS3Mover) DeleteObj(objKey string, loca *LocationInfo) error {
-	sess := NewClient(loca.EndPoint, loca.Access, loca.Security)
-	bucket := sess.NewBucket()
-	cephObject := bucket.NewObject(loca.BucketName)
-
-	err := cephObject.Remove(objKey)
+	s3c := s3Cred{ak: loca.Access, sk: loca.Security}
+	creds := credentials.NewCredentials(&s3c)
+	sess, err := session.NewSession(&aws.Config{
+		Region:      aws.String(loca.Region),
+		Endpoint:    aws.String(loca.EndPoint),
+		Credentials: creds,
+	})
 	if err != nil {
-		log.Errorf("[cephs3mover] error occurred while waiting for object[%s] to be deleted.\n", objKey)
-		e := handleCephS3Errors(err)
-		return e
+		log.Errorf("[cephs3mover] new session failed, err:%v\n", err)
+		return err
 	}
 
-	log.Infof("[cephs3mover] Delete Object[%s] successfully.\n", objKey)
-	return nil
+	svc := s3.New(sess)
+	log.Infof("[cephs3mover] Try to delete object[key:%s] from bucket %s.\n", objKey, loca.BucketName)
+	for tries := 1; tries <= 3; tries++ {
+		_, err = svc.DeleteObject(&s3.DeleteObjectInput{Bucket: aws.String(loca.BucketName), Key: aws.String(objKey)})
+		if err != nil {
+			log.Errorf("[cephs3mover] delete object[key:%s] from bucket %s failed %d times, err:%v\n",
+				objKey, loca.BucketName, tries, err)
+			e := handleCephS3Errors(err)
+			if tries >= 3 || e.Error() == DMERR_NoPermission { //If no permission, then no need to retry.
+				return e
+			}
+		} else {
+			err = svc.WaitUntilObjectNotExists(&s3.HeadObjectInput{
+				Bucket: aws.String(loca.BucketName),
+				Key:    aws.String(objKey),
+			})
+			if err != nil {
+				log.Errorf("[cephs3mover] error occurred while waiting for object[%s] to be deleted.\n", objKey)
+			} else {
+				log.Infof("[cephs3mover] delete object[key:%s] from bucket %s successfully.\n", objKey, loca.BucketName)
+			}
+			return err
+		}
+	}
+
+	log.Infof("[cephs3mover] Delete Object[%s], should not be here.\n", objKey)
+	return errors.New(DMERR_InternalError)
 }
 
-func ListObjs(loca *LocationInfo, filt *pb.Filter) ([]models.GetBucketResponseContent, error) {
-	sess := NewClient(loca.EndPoint, loca.Access, loca.Security)
-	bucket := sess.NewBucket()
-	var output *models.GetBucketResponse
-	var err error
-	if filt != nil {
-		output, err = bucket.Get(string(loca.BucketName), filt.Prefix, "", "", 1000)
-	} else {
-		output, err = bucket.Get(string(loca.BucketName), "", "", "", 1000)
-	}
+func ListObjs(loca *LocationInfo, filt *pb.Filter) ([]*s3.Object, error) {
+	s3c := s3Cred{ak: loca.Access, sk: loca.Security}
+	creds := credentials.NewCredentials(&s3c)
+	sess, err := session.NewSession(&aws.Config{
+		Region:      aws.String(loca.Region),
+		Endpoint:    aws.String(loca.EndPoint),
+		Credentials: creds,
+	})
 	if err != nil {
-		log.Errorf("[cephs3mover] list bucket failed, err:%v\n", err)
-		e := handleCephS3Errors(err)
+		log.Errorf("[cephs3mover] new session failed, err:%v\n", err)
+		return nil, handleCephS3Errors(err)
+	}
+	svc := s3.New(sess)
+	input := &s3.ListObjectsInput{Bucket: aws.String(loca.BucketName)}
+	if filt != nil {
+		input.Prefix = &filt.Prefix
+	}
+	output, err := svc.ListObjects(input)
+	e := handleCephS3Errors(err)
+	if e != nil {
+		log.Errorf("[cephs3mover] list ceph bucket failed, err:%v\n", e)
 		return nil, e
 	}
-
 	objs := output.Contents
-	size := len(objs)
-	var out []models.GetBucketResponseContent
-	for i := 0; i < size; i++ {
-		out = append(out, models.GetBucketResponseContent{
-			Key:          objs[i].Key,
-			Size:         objs[i].Size,
-			StorageClass: objs[i].StorageClass,
-			Owner:        objs[i].Owner,
-			LastModified: objs[i].LastModified,
-			Tag:          objs[i].Tag,
-		})
+	for *output.IsTruncated == true {
+		input.Marker = output.NextMarker
+		output, err = svc.ListObjects(input)
+		e := handleCephS3Errors(err)
+		if e != nil {
+			log.Errorf("[cephs3mover] list objects failed, err:%v\n", e)
+			return nil, e
+		}
+		objs = append(objs, output.Contents...)
 	}
 	log.Infof("[cephs3mover] Number of objects in bucket[%s] is %d.\n", loca.BucketName, len(objs))
 	return output.Contents, nil
