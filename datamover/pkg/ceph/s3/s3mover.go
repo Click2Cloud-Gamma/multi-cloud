@@ -149,10 +149,12 @@ func (mover *CephS3Mover) DownloadObj(objKey string, srcLoca *LocationInfo, buf 
 func (mover *CephS3Mover) MultiPartDownloadInit(srcLoca *LocationInfo) error {
 	s3c := s3Cred{ak: srcLoca.Access, sk: srcLoca.Security}
 	creds := credentials.NewCredentials(&s3c)
+	s3forcepathstyle := true
 	sess, err := session.NewSession(&aws.Config{
-		Region:      aws.String(srcLoca.Region),
-		Endpoint:    aws.String(srcLoca.EndPoint),
-		Credentials: creds,
+		Region:           aws.String(srcLoca.Region),
+		Endpoint:         aws.String(srcLoca.EndPoint),
+		Credentials:      creds,
+		S3ForcePathStyle: &s3forcepathstyle,
 	})
 	if err != nil {
 		log.Errorf("[cephs3mover] new session for multipart download failed, err:%v\n", err)
