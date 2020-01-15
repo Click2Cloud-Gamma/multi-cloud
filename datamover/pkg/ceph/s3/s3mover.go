@@ -70,10 +70,12 @@ func (mover *CephS3Mover) UploadObj(objKey string, destLoca *LocationInfo, buf [
 	log.Infof("[cephs3mover] UploadObj object, key:%s.", objKey)
 	s3c := s3Cred{ak: destLoca.Access, sk: destLoca.Security}
 	creds := credentials.NewCredentials(&s3c)
+	s3forcepathstyle := true
 	sess, err := session.NewSession(&aws.Config{
-		Region:      aws.String(destLoca.Region),
-		Endpoint:    aws.String(destLoca.EndPoint),
-		Credentials: creds,
+		Region:           aws.String(destLoca.Region),
+		Endpoint:         aws.String(destLoca.EndPoint),
+		S3ForcePathStyle: &s3forcepathstyle,
+		Credentials:      creds,
 	})
 	if err != nil {
 		log.Errorf("[ceohs3mover] New session failed, err:%v\n", err)
@@ -110,10 +112,12 @@ func (mover *CephS3Mover) UploadObj(objKey string, destLoca *LocationInfo, buf [
 func (mover *CephS3Mover) DownloadObj(objKey string, srcLoca *LocationInfo, buf []byte) (size int64, err error) {
 	s3c := s3Cred{ak: srcLoca.Access, sk: srcLoca.Security}
 	creds := credentials.NewCredentials(&s3c)
+	s3forcepathstyle := true
 	sess, err := session.NewSession(&aws.Config{
-		Region:      aws.String(srcLoca.Region),
-		Endpoint:    aws.String(srcLoca.EndPoint),
-		Credentials: creds,
+		Region:           aws.String(srcLoca.Region),
+		Endpoint:         aws.String(srcLoca.EndPoint),
+		S3ForcePathStyle: &s3forcepathstyle,
+		Credentials:      creds,
 	})
 	if err != nil {
 		log.Errorf("[cephs3mover] New session failed, err:%v\n", err)
@@ -199,10 +203,12 @@ func (mover *CephS3Mover) DownloadRange(objKey string, srcLoca *LocationInfo, bu
 func (mover *CephS3Mover) MultiPartUploadInit(objKey string, destLoca *LocationInfo) (string, error) {
 	s3c := s3Cred{ak: destLoca.Access, sk: destLoca.Security}
 	creds := credentials.NewCredentials(&s3c)
+	s3forcepathstyle := true
 	sess, err := session.NewSession(&aws.Config{
-		Region:      aws.String(destLoca.Region),
-		Endpoint:    aws.String(destLoca.EndPoint),
-		Credentials: creds,
+		Region:           aws.String(destLoca.Region),
+		Endpoint:         aws.String(destLoca.EndPoint),
+		S3ForcePathStyle: &s3forcepathstyle,
+		Credentials:      creds,
 	})
 	if err != nil {
 		log.Errorf("[cephs3mover] new session failed, err:%v\n", err)
@@ -331,10 +337,12 @@ func (mover *CephS3Mover) CompleteMultipartUpload(objKey string, destLoca *Locat
 func (mover *CephS3Mover) DeleteObj(objKey string, loca *LocationInfo) error {
 	s3c := s3Cred{ak: loca.Access, sk: loca.Security}
 	creds := credentials.NewCredentials(&s3c)
+	s3forcepathstyle := true
 	sess, err := session.NewSession(&aws.Config{
-		Region:      aws.String(loca.Region),
-		Endpoint:    aws.String(loca.EndPoint),
-		Credentials: creds,
+		Region:           aws.String(loca.Region),
+		Endpoint:         aws.String(loca.EndPoint),
+		S3ForcePathStyle: &s3forcepathstyle,
+		Credentials:      creds,
 	})
 	if err != nil {
 		log.Errorf("[cephs3mover] new session failed, err:%v\n", err)
@@ -373,10 +381,12 @@ func (mover *CephS3Mover) DeleteObj(objKey string, loca *LocationInfo) error {
 func ListObjs(loca *LocationInfo, filt *pb.Filter) ([]*s3.Object, error) {
 	s3c := s3Cred{ak: loca.Access, sk: loca.Security}
 	creds := credentials.NewCredentials(&s3c)
+	s3forcepathstyle := true
 	sess, err := session.NewSession(&aws.Config{
-		Region:      aws.String(loca.Region),
-		Endpoint:    aws.String(loca.EndPoint),
-		Credentials: creds,
+		Region:           aws.String(loca.Region),
+		Endpoint:         aws.String(loca.EndPoint),
+		S3ForcePathStyle: &s3forcepathstyle,
+		Credentials:      creds,
 	})
 	if err != nil {
 		log.Errorf("[cephs3mover] new session failed, err:%v\n", err)
