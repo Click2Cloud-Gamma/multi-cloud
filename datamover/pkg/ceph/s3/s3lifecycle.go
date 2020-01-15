@@ -27,10 +27,12 @@ func (mover *CephS3Mover) ChangeStorageClass(objKey *string, newClass *string, l
 	log.Infof("[cephs3lifecycle] Change storage class of object[%s] to %s.", objKey, newClass)
 	s3c := s3Cred{ak: loca.Access, sk: loca.Security}
 	creds := credentials.NewCredentials(&s3c)
+	s3forcepathstyle := true
 	sess, err := session.NewSession(&aws.Config{
-		Region:      aws.String(loca.Region),
-		Endpoint:    aws.String(loca.EndPoint),
-		Credentials: creds,
+		Region:           aws.String(loca.Region),
+		Endpoint:         aws.String(loca.EndPoint),
+		S3ForcePathStyle: &s3forcepathstyle,
+		Credentials:      creds,
 	})
 	if err != nil {
 		log.Errorf("[cephs3lifecycle] new session failed, err:%v\n", err)
@@ -58,10 +60,12 @@ func (mover *CephS3Mover) DeleteIncompleteMultipartUpload(objKey, uploadId strin
 	log.Infof("[cephs3lifecycle] Abort multipart upload[objkey:%s] for uploadId#%s.\n", objKey, uploadId)
 	s3c := s3Cred{ak: loc.Access, sk: loc.Security}
 	creds := credentials.NewCredentials(&s3c)
+	s3forcepathstyle := true
 	sess, err := session.NewSession(&aws.Config{
-		Region:      aws.String(loc.Region),
-		Endpoint:    aws.String(loc.EndPoint),
-		Credentials: creds,
+		Region:           aws.String(loc.Region),
+		Endpoint:         aws.String(loc.EndPoint),
+		S3ForcePathStyle: &s3forcepathstyle,
+		Credentials:      creds,
 	})
 	if err != nil {
 		log.Errorf("[cephs3lifecycle] new session failed, err:%v\n", err)

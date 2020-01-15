@@ -76,13 +76,14 @@ func (ad *CephAdapter) Put(ctx context.Context, stream io.Reader, object *pb.Obj
 	}
 	md5Writer := md5.New()
 	dataReader := io.TeeReader(limitedDataReader, md5Writer)
+
 	if object.Tier == 0 {
 		// default
 		object.Tier = utils.Tier1
 	}
 	storClass, err := osdss3.GetNameFromTier(object.Tier, utils.OSTYPE_CEPH)
 	if err != nil {
-		log.Infof("translate tier[%d] to aws storage class failed\n", object.Tier)
+		log.Infof("translate tier[%d] to ceph storage class failed\n", object.Tier)
 		return result, ErrInternalError
 	}
 	uploader := s3manager.NewUploader(ad.session)
