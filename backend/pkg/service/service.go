@@ -19,11 +19,11 @@ import (
 	"errors"
 	"fmt"
 
-	log "github.com/sirupsen/logrus"
 	"github.com/opensds/multi-cloud/backend/pkg/db"
 	"github.com/opensds/multi-cloud/backend/pkg/model"
 	"github.com/opensds/multi-cloud/backend/pkg/utils/constants"
 	pb "github.com/opensds/multi-cloud/backend/proto"
+	log "github.com/sirupsen/logrus"
 )
 
 type backendService struct{}
@@ -206,6 +206,10 @@ func (b *backendService) ListType(ctx context.Context, in *pb.ListTypeRequest, o
 		{
 			Name:        constants.BackendTypeYIGS3,
 			Description: "YIG Storage",
+		},
+		{
+			Name:        constants.BackendTypeAlibaba,
+			Description: "Alibaba Object Storage Service(OSS)",
 		},
 	}
 
