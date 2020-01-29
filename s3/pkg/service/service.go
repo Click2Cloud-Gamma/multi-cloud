@@ -17,6 +17,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"github.com/aliyun/aliyun-oss-go-sdk/oss"
 	"github.com/opensds/multi-cloud/s3/pkg/utils"
 	"os"
 	"strconv"
@@ -147,6 +148,22 @@ func loadHWDefault(i2e *map[string]*Int2String, e2i *map[string]*String2Int) {
 	(*e2i)[OSTYPE_OBS] = &n2t
 }
 
+//****************************alibaba********************************************//
+func loadAlibabaDefault(i2e *map[string]*Int2String, e2i *map[string]*String2Int) {
+	t2n := make(Int2String)
+	t2n[Tier1] = string(oss.StorageStandard)
+	t2n[Tier99] = string(oss.StorageIA)
+	t2n[Tier999] = string(oss.StorageArchive)
+	(*i2e)[OSTYPE_OBS] = &t2n
+
+	n2t := make(String2Int)
+	n2t[string(oss.StorageStandard)] = Tier1
+	n2t[string(oss.StorageIA)] = Tier99
+	n2t[string(oss.StorageArchive)] = Tier999
+	(*e2i)[OSTYPE_ALIBABA] = &n2t
+}
+
+//*************************************************************************************************//
 func loadGCPDefault(i2e *map[string]*Int2String, e2i *map[string]*String2Int) {
 	t2n := make(Int2String)
 	t2n[Tier1] = GCS_MULTI_REGIONAL
@@ -321,17 +338,17 @@ func (s *s3Service) UpdateBucket(ctx context.Context, in *pb.Bucket, out *pb.Bas
 
 	//TODO FIXME
 	/*
-	//update versioning if not nil
-	if in.Versioning != nil {
-		err := s.MetaStorage.Db.UpdateBucketVersioning(ctx, in.Name, in.Versioning.Status)
-		if err != nil {
-			log.Errorf("get bucket[%s] failed, err:%v\n", in.Name, err)
-			return err
+		//update versioning if not nil
+		if in.Versioning != nil {
+			err := s.MetaStorage.Db.UpdateBucketVersioning(ctx, in.Name, in.Versioning.Status)
+			if err != nil {
+				log.Errorf("get bucket[%s] failed, err:%v\n", in.Name, err)
+				return err
+			}
 		}
-	}
 
-	 */
-	if in.ServerSideEncryption != nil{
+	*/
+	if in.ServerSideEncryption != nil {
 		byteArr, keyErr := utils.GetRandom32BitKey()
 		if keyErr != nil {
 			log.Error("Error generating SSE key", keyErr)
